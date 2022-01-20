@@ -16,7 +16,6 @@ output:
 knitr::opts_chunk$set(echo = FALSE)
 
 library(plyr)
-library(dplyr)
 library(ggplot2)
 library(lubridate)
 library(naniar)
@@ -36,6 +35,8 @@ library(lognorm)
 library(reshape2)
 library(matrixStats)
 library(gtools)
+library(dplyr)
+
 
 ```
 
@@ -85,6 +86,22 @@ BB1 <- BB1 %>%
   filter(DATE >= as.POSIXct("2015-10-01 00:30:00", tz = "UTC") & DATE < as.POSIXct("2021-10-01 00:00:00", tz = "UTC")) 
 REddyProcOutput <- REddyProcOutput %>% 
   filter(date >= "2015-10-01" & date < "2021-10-01") 
+result_RF_FCH4 <- result_RF_FCH4 %>% 
+  filter(DateTime >= as.POSIXct("2015-10-01 00:30:00", tz = "UTC") & DateTime < as.POSIXct("2021-10-01 00:00:00", tz = "UTC")) 
+result_RF_NEE <- result_RF_NEE %>% 
+  filter(DateTime >= as.POSIXct("2015-10-01 00:30:00", tz = "UTC") & DateTime < as.POSIXct("2021-10-01 00:00:00", tz = "UTC"))
+
+
+#Conversion factors
+ch4_conv <- 12.01/(10^6)
+co2_conv <- 12.01/(10^6) 
+d.avg <- 1800 * 48  # 60s * 30min * 2 hours * 24 hours
+
+```
+
+```{r functions}
+
+###### functions #######
 
 
 # function for setting year period
@@ -106,264 +123,70 @@ set_period <- function(data) {
   data
 }
 
-#Conversion factors
-ch4_conv <- 12.01/(10^6)
-co2_conv <- 12.01/(10^6) 
-d.avg <- 1800 * 48  # 60s * 30min * 2 hours * 24 hours
-
-
-
-```
-
-```{r data wrangling and function , include = F, message = F, warning = F}
-# fill long gaps after MDS gapfilling with values from random forest gapfilling
-long_gap2 <- BB1$DATE >= as.POSIXct("2015-12-01 00:30:00", tz = "UTC") &
-  BB1$DATE < as.POSIXct("2016-02-21 00:30:00", tz = "UTC")
-long_gap <- BB1$DATE >= as.POSIXct("2016-10-22 00:30:00", tz = "UTC") &
-  BB1$DATE < as.POSIXct("2017-01-21 00:30:00", tz = "UTC")
-
-
-BB1$NEE_RF <- RF_NEE$NEE_RF_filled  # random forest gapfill
-BB1$NEE_f_RF <- BB1$NEE_f
-BB1$NEE_RF_fsd <- RF_NEE$NEE_RF_filled_SD
-
-# fill all NA values with values from random forest
-BB1$NEE_f_RF[long_gap] <- BB1$NEE_RF[long_gap]
-BB1$NEE_f_RF[long_gap2] <- BB1$NEE_RF[long_gap2]
-
-
-# check if there are still gaps
-which(is.na(BB1$NEE_f_RF))
-
-
-BB1$GPP_f_RF <- BB1$Reco - BB1$NEE_f_RF
-
-
-
-
-########### BB flux ############
-
-# BB_flux <- BB1 %>%
-#   select (c(DATE, date, jday, month_local, Year_local, time, period, season,
-#             Tau, ET, RH, u., jday, co2_flux, ch4_flux, NEE_f,
-#             Reco, GPP_f, GPP_DT, Reco_DT, FCH4_f, FCH4_gf_RF,
-#             NEE_f_RF, GPP_f_RF)) %>%
-#   dplyr::rename(year_local = Year_local)
-
-BB_flux <- BB1 %>%
-  select (c(DATE, date, jday, month_local, Year_local, time, period, season,
-            Tau, ET, RH, u., jday, co2_flux, ch4_flux, NEE_f,
-            Reco, GPP_f, GPP_DT, Reco_DT, FCH4_f)) %>%
-  dplyr::rename(year_local = Year_local)
-
-
-# function 
-plot_daily <- function(data, variable, label, ma = 15) {
-  # browser()
-  if(ma == 1) {
-    data %>% 
-    ggplot() +
-    geom_line(aes(x = date, y = {{variable}}), col = "navy") +
-    labs(x = "year", 
-         y = label) +
-    # theme(legend.position="none") +
-    theme_bw()
-  } else {
-    data %>% 
-    ggplot() +
-    geom_point(aes(x = date, y = {{variable}}, col = "daily")) +
-    geom_line(aes(x = date, y = rollmean({{variable}}, ma, fill = NA), col = "smoothed")) +
-    scale_color_manual(values = c("daily" = "lightblue", 
-                                  "smoothed" = "navy")) +
-    labs(x = "year", 
-         y = label, 
-         colour = "") +
-    theme_bw()  
-  }
-}
-
-plot_monthly <- function(main_data, mean_data){
-  main_data%>%
-  ggplot() +
-    geom_bar(aes(x = month, y = value, fill = as.factor(period)), 
-             position = position_dodge(), stat="identity") +
-    geom_line(data = mean_data, aes(x = month, y = value, group = 1)) +
-    geom_point(data = mean_data, aes(x = month, y = value, group = 1)) +
-    facet_wrap(vars(variable_lab), ncol = 1,
-               scales = "free_y",
-               strip.position = "left", 
-               # labeller = label_parsed
-               ) +
-    labs(x = "", y = "", fill = "Year") +
-    theme_bw()+
-    theme(strip.background = element_blank(),
-          strip.placement = "outside") 
-}
-
-plot_monthly_anom <- function(main_data, anom_data){
-  main_data%>%
-  ggplot() +
-    geom_bar(data= anom_data, aes(x = month, y = value), 
-             position = position_dodge(), stat="identity") +
-    geom_line(aes(x = month, y = value, group = 1)) +
-    facet_wrap(vars(variable_lab), ncol = 1,
-               scales = "free_y",
-               strip.position = "left", 
-               # labeller = label_parsed
-               ) +
-    # labs(x = "", y = "", fill = "Year") +
-    scale_y_continuous(name = "", 
-      sec.axis = sec_axis(~./2, name = "Productivity % of best", 
-        labels = "")
-      ) +
-    theme_bw()+
-    theme(strip.background = element_blank(),
-          strip.placement = "outside") 
-}
-
-```
-
-
-```{r Data wrangling for fluxes, include = F, message = F, warning = F}
-#Conversion factors
-ch4_conv <- 12.01/(10^6)
-co2_conv <- 12.01/(10^6) 
-d.avg <- 1800 * 48  # 60s * 30min * 2 hours * 24 hours
-
-#TO FILTER NON GF DATA TO DAYS WHERE ONLY 60% OR MORE IS PRESENT
-daily.nGF <- BB_flux %>%
-  dplyr::select(c(year_local, jday, month_local, co2_flux, ch4_flux)) %>%
-  drop_na()
-
-obs_count <- daily.nGF %>% 
-  group_by(year_local, jday) %>% 
-  tally() %>% 
-  ungroup()
-
-daily.nGF <- daily.nGF %>%
-  group_by(year_local, jday) %>% 
-  summarize(co2 = mean(co2_flux),
-            ch4 = mean(ch4_flux)) %>%
-  mutate(co2gC = co2 * d.avg * co2_conv) %>%
-  mutate(ch4gC = ch4* d.avg * co2_conv) %>%
-  mutate(ch4mgC = ch4gC * 1000) %>% 
-  ungroup() %>% 
-  mutate(n = obs_count$n) %>% 
-  # filter(n > 48 * 0.6) %>% 
-  mutate(date = as.POSIXct(paste(year_local, jday, sep = "-"), format = "%Y-%j"))
-
-daily.nGF[which(daily.nGF$n > 48 * 0.6), 2:6] <- NA
-
-  
-# daily.nGF$month_local <- as.factor(daily.nGF$month_local)
-
-daily <- BB_flux %>%
-  ddply("date", summarize,
-            NEE_f = mean(NEE_f),
-            NEE_f_RF = mean(NEE_f_RF),
-            GPP_DT = mean(GPP_DT),
-            GPP_f = mean(GPP_f),
-            GPP_f_RF = mean(GPP_f_RF),
-            Reco = mean(Reco),
-            Reco_DT = mean(Reco_DT),
-            CH4_f_RF = mean(FCH4_gf_RF),
-            CH4_f = mean(FCH4_f)) %>%
-  mutate(NEEgC_f = NEE_f * d.avg * co2_conv, 
-         NEEgC_f_RF = NEE_f_RF * d.avg * co2_conv,
-         GPPgC_DT = GPP_DT * d.avg * co2_conv, 
-         GPPgC_f = GPP_f *d.avg * co2_conv,
-         GPPgC_f_RF = GPP_f_RF * d.avg * co2_conv,
-         RecogC = Reco * d.avg * co2_conv, 
-         RecogC_DT = Reco_DT * d.avg * co2_conv,
-         CH4gC_f = CH4_f * d.avg * ch4_conv, 
-         CH4mgC_f = CH4gC_f * 1000,
-         CH4gC_f_RF = CH4_f_RF * d.avg * ch4_conv,
-         CH4mgC_f_RF = CH4gC_f_RF * 1000,
-         year_local = year(date), 
-         month_local = month(date), 
-         floor_date = floor_date(date, "month"))
-
-
-
-# set year period
-y_2015_2016 <- daily$date >= "2015-06-20" & daily$date < "2016-06-20"
-y_2016_2017 <- daily$date >= "2016-06-20" & daily$date < "2017-06-20"
-y_2017_2018 <- daily$date >= "2017-06-20" & daily$date < "2018-06-20"
-y_2018_2019 <- daily$date >= "2018-06-20" & daily$date < "2019-06-20"
-y_2019_2020 <- daily$date >= "2019-06-20" & daily$date < "2020-06-20"
-y_2020_2021 <- daily$date >= "2020-06-20" & daily$date < "2021-06-20"
-
-
-
-daily$period[y_2015_2016] <- "2015-2016"
-daily$period[y_2016_2017] <- "2016-2017"
-daily$period[y_2017_2018] <- "2017-2018"
-daily$period[y_2018_2019] <- "2018-2019"
-daily$period[y_2019_2020] <- "2019-2020"
-daily$period[y_2020_2021] <- "2020-2021"
-
 # set season 
-GS <- daily$month_local %in% c(4, 5, 6, 7, 8, 9)
-NGS <- daily$month_local %in% c(10, 11, 12, 1, 2, 3)
-daily$season[GS] <- "growing season"
-daily$season[NGS] <- "non-growing season"
+set_season <- function(input, date_vector){
+  input$month_local <- month(date_vector)
+  GS <- input$month_local %in% c(4, 5, 6, 7, 8, 9)
+  NGS <- input$month_local %in% c(10, 11, 12, 1, 2, 3)
+  input$season <- NA
+  input$season[GS] <- "growing season"
+  input$season[NGS] <- "non-growing season"
+  input
+}
 
-cumsum <- daily %>% 
-  group_by(period) %>% 
-  arrange(date) %>% 
-  mutate(cumNEE = cumsum(NEEgC_f), 
-         cumNEE_RF = cumsum(NEEgC_f_RF),
-         cumReco = cumsum(RecogC),
-         cumGPP = cumsum(GPPgC_f), 
-         cumGPP_RF = cumsum(GPPgC_f_RF),
-         cumCH4 = cumsum(CH4gC_f_RF)
-         ) %>% 
-  ungroup()
-
-monthly <- daily %>% 
-   ddply(c("floor_date"), summarize,
-        length = length(NEEgC_f),
-        NEEgC_f = mean(NEEgC_f) * length, # * length(NEEgC_f) for month^-1
-        NEEgC_f_RF = mean(NEEgC_f_RF)* length,
-        GPPgC_f = mean(GPPgC_f)* length,
-        GPPgC_f_RF = mean(GPPgC_f_RF)* length,
-        RecogC = mean(RecogC)* length,
-        CH4gC_f = mean(CH4gC_f)* length,
-        CH4gC_f_RF = mean(CH4gC_f_RF)* length) %>% 
-  mutate(month_local = month(floor_date))
-
-monthly_means <- monthly %>% 
-  ddply("month_local", summarize, 
-       NEEgC_f = mean(NEEgC_f, na.rm = T),
-       NEEgC_f_RF = mean(NEEgC_f_RF, na.rm = T), 
-       GPPgC_f = mean(GPPgC_f, na.rm = T),
-       GPPgC_f_RF = mean(GPPgC_f_RF, na.rm = T), 
-       RecogC = mean(RecogC, na.rm = T),
-       CH4gC_f = mean(CH4gC_f, na.rm = T),
-       CH4gC_f_RF = mean(CH4gC_f_RF, na.rm = T))
-# daily$month_local <- as.factor(daily$month_local)
-
-monthly_anom <- monthly
-for(i in 1:nrow(monthly)){ 
-  monthly_anom[i, c(3:8)] <- monthly_anom[i, c(3:8)] -  
-    monthly_means[monthly$month_local[i], c(2:7)]
+# calculate GS
+calculate_GS <- function(input, var, ind = ustar_ind){  # variable = c("GPP_f", "NEE_f", "Reco")
+  input <- set_season(input, input$date)
+  input_GS <- input %>% 
+    filter(season == "growing season")
+  
+  period <- unique (input$period)
+  cumsum_i <- NA
+  GS_output <- NA
+  
+  for(i in period){
+    cumsum_i <- input_GS %>% filter(period == i) 
+    cumsum_i <- calculate_cumsum_unc(data = cumsum_i, 
+                                   ind = ind, 
+                                   variable = var, 
+                                   start_mean = 0, 
+                                   start_SD = 0)
+    cumsum_i <- cumsum_i[[1]] %>% 
+      select("date", "SD", "mean") %>% 
+      mutate(upper = mean + SD, 
+             lower = mean - SD, 
+             period = i)
+    if(i == "2015-2016") {
+      GS_output <- cumsum_i
+    } else {
+      GS_output <- rbind(GS_output, cumsum_i)
+    }
   }
+  
+  GS_output <- GS_output %>% 
+  group_by(period) %>% 
+  filter(date == max(date)) %>%  # pick the last time of each day to get daily cumulative
+  ungroup() %>% 
+  mutate(joint_CI = SD * 1.96,
+         upper = mean + joint_CI, 
+         lower = mean - joint_CI)
+  
+  GS_output 
+  
+}
 
-# dailyGS <- daily[(daily$jday >= 92 & daily$jday <= 274), ] 
-# dailyNGS <-daily[(daily$jday < 92 | daily$jday >=275), ] 
+# calculate NGS
+calculate_NGS <- function(input){
+  input <- set_season(input, input$date)
+  NGS_output <- input %>% 
+    group_by(period, season) %>% 
+    filter(date == max(date) & season == "non-growing season") %>% # pick the last time of each day to get daily cumulative
+    ungroup()
+  NGS_output
+}
 
-
-# Cbudget <- daily %>%
-#   dplyr::select(c(Site, month_local, jday, CH4mgC_f_RF, CH4gC_f_RF, NEEgC_f)) %>%
-#   group_by(Site, month_local) %>%
-#   summarise(CH4gCcum = cumsum(CH4gC_f_RF),
-#             CH4mgcum = cumsum(CH4mgC_f_RF),
-#             NEEgCcum = cumsum(NEEgC_f),
-#             NEEgC = NEEgC_f,
-#             CH4gC = CH4gC_f_RF,
-#             CH4mgC = CH4mgC_f_RF,
-#             jday = jday)
 ```
+
 
 
 ```{r wrangling for uncertainty analysis}
@@ -378,6 +201,8 @@ REddyProcOutput <- REddyProcOutput %>%
   ) %>% 
   rename(ustar_season = season) %>% 
   set_period()
+
+
 
 ```
 
@@ -634,20 +459,20 @@ aggDayUstar_RECO_plot <- (plot_uncertainty(sdAggDayUstar_RECO, "RECO"))
 
 #--------- annual aggregation for systematic uncertainty ---------#
 
-# Compute the mean NEE for each u* threshold 
+# Compute the mean NEE for each u* threshold
 
 
-aggAnnualUstar <- REddyProcOutput %>% 
-  ddply("period", summarize, 
-        DateTime = first(sDateTime), 
+aggAnnualUstar <- REddyProcOutput %>%
+  ddply("period", summarize,
+        DateTime = first(sDateTime),
         NEE_f = mean(NEE_f, na.rm = TRUE)* d.avg * co2_conv * 365.5,
         U05 = mean(NEE_U05_f, na.rm = TRUE)* d.avg * co2_conv * 365.5,
         U50 = mean(NEE_U50_f, na.rm = TRUE)* d.avg * co2_conv * 365.5,
         U95 = mean(NEE_U95_f, na.rm = TRUE)* d.avg * co2_conv * 365.5,
         )
 
-sdAggAnnualUstar <- cbind(aggAnnualUstar$period, transform(aggAnnualUstar[ , c(3:6)], 
-                           SD=apply(aggAnnualUstar,1, sd, na.rm = TRUE))) %>% 
+sdAggAnnualUstar <- cbind(aggAnnualUstar$period, transform(aggAnnualUstar[ , c(3:6)],
+                           SD=apply(aggAnnualUstar,1, sd, na.rm = TRUE))) %>%
                   mutate(
                     date = aggAnnualUstar$DateTime,
                     NEE = NEE_f,
@@ -656,39 +481,10 @@ sdAggAnnualUstar <- cbind(aggAnnualUstar$period, transform(aggAnnualUstar[ , c(3
                   )
 
 
-#--------- GS/NGS aggregation for systematic uncertainty ---------#
-
-# number of obs per season
-count <- REddyProcOutput %>%
-  dplyr::count(period, season)
-
-# Compute the mean NEE for each u* threshold 
-aggGSUstar <- REddyProcOutput %>% 
-  ddply(c("period", "season"), summarize, 
-        DateTime = first(sDateTime), 
-        ustar = mean(NEE_uStar_f, na.rm = TRUE)* d.avg * co2_conv,
-        U05 = mean(NEE_U05_f, na.rm = TRUE)* d.avg * co2_conv,
-        U50 = mean(NEE_U50_f, na.rm = TRUE)* d.avg * co2_conv,
-        U95 = mean(NEE_U95_f, na.rm = TRUE)* d.avg * co2_conv,
-        ) %>%
-  mutate(day_count = count$n/48,  # n of obs/season divided by 48 obs/day to get n day/season
-        ustar = ustar * day_count,
-        U05 = U05 * day_count,
-        U50 = U50 * day_count,
-        U95 = U95 * day_count)
-
-sdAggGSUstar <- cbind(aggGSUstar$period, aggGSUstar$season, transform(aggGSUstar[ , c(4:7)], 
-                           SD=apply(aggGSUstar,1, sd, na.rm = TRUE))) %>% 
-                  mutate(
-                    NEE = ustar,
-                    NEE_U = ustar + SD,
-                    NEE_L = ustar - SD,
-                  )
-
 
 ######### calculation from Marion  
 
-#NEE
+# only to check if the values are too far off
 
 MN_aggAnnualUstar <- REddyProcOutput %>% 
   ddply("period", summarize, 
@@ -1034,7 +830,7 @@ NEE_ustar_cumsum_annual <- NEE_ustar_cumsum %>%
 
 
 
-#####------------- combine cumulative random and u* uncertainty -------------###
+#####------------- combine cumulative random and u* uncertainty -------------####
 
 aggUnc_NEE_cumsum <- left_join(NEE_ustar_cumsum, filter(aggDayRand_cum, date < "2021-06-20")) %>% 
   select(date, SD, mean, period, order, day_label, sdNEE) 
@@ -1062,11 +858,26 @@ NEE_cumsum_plot <- aggUnc_NEE_cumsum %>%
     theme_bw()
 
 
+
+##########---------- annual aggregation of random and systematic uncertainty for NEE --------#############
+
 NEE_joint_cumsum_annual <- aggUnc_NEE_cumsum %>% 
   group_by(period) %>% 
   filter(date == max(date)) %>%  # pick the last time of each day to get daily cumulative
   ungroup()
 
+
+
+##############--------- GS/NGS aggregation of random & systematic uncertainty for NEE ---------##############
+
+#-- for NGS----#
+# just used daily joint uncertainty but cut it off at last day of NGS
+
+NEE_NGS <- calculate_NGS(aggUnc_NEE_cumsum)
+
+#-- for GS ---#
+
+NEE_GS <- calculate_GS(sdAggDayUstar_NEE_combined, "NEE_f")
 
 ```
 
@@ -1133,10 +944,26 @@ Reco_cumsum_plot <- Reco_ustar_cumsum %>%
          fill = "") +
     theme_bw()
 
+
+###########------- annual aggregation ---------##########
+
 Reco_ustar_cumsum_annual <- Reco_ustar_cumsum %>% 
   group_by(period) %>% 
   filter(date == max(date)) %>%  # pick the last time of each day to get daily cumulative
   ungroup()
+
+###########----------- GS/NGS aggregated uncertainty ---------########
+
+#-- for NGS----#
+# just used daily joint uncertainty but cut it off at last day of NGS
+
+
+Reco_NGS <- calculate_NGS(Reco_ustar_cumsum)
+
+#-- for GS ---# 
+
+Reco_GS <- calculate_GS(sdAggDayUstar_RECO, "Reco")
+
 ```
 
 ```{r cumsum uncertainty for GPP}
@@ -1145,6 +972,7 @@ Reco_ustar_cumsum_annual <- Reco_ustar_cumsum %>%
 
 ############---------- 2015-2016 period -------------############
 
+sdAggDayUstar_GPP <- set_period(sdAggDayUstar_GPP)
 ### MDS
 GPP_MDS1_cumsum <- sdAggDayUstar_GPP %>% filter(period == "2015-2016" & date <"2015-12-01") 
 ustar_ind <- grep("GPP_", colnames(GPP_MDS1_cumsum), value = T)
@@ -1355,12 +1183,25 @@ GPP_cumsum_plot <- GPP_ustar_cumsum %>%
          fill = "") +
     theme_bw()
 
+
+
+##########---------- annual aggregation of systematic uncertainty of GPP ---------#######
+
 GPP_ustar_cumsum_annual <- GPP_ustar_cumsum %>% 
   group_by(period) %>% 
   filter(date == max(date)) %>%  # pick the last time of each day to get daily cumulative
   ungroup()
 
 
+##########--------- GS/NGS aggregation of random & systematic uncertainty for GPP ---------#######
+
+#-- for NGS----#
+
+GPP_NGS <- calculate_NGS(GPP_ustar_cumsum)
+
+#-- for GS ---#
+
+GPP_GS <- calculate_GS(sdAggDayUstar_GPP, "GPP_f")
 
 ```
 
@@ -1434,11 +1275,22 @@ FCH4_cumsum_plot <- FCH4_unc_cumsum %>%
          fill = "") +
     theme_bw()
 
+
+###### ---------- annual aggregation for CH4 ----------##########
 FCH4_unc_cumsum_annual <- FCH4_unc_cumsum %>% 
   group_by(period) %>% 
   filter(date == max(date)) %>%  # pick the last time of each day to get daily cumulative
   ungroup()
 
+
+
+######----------- GS/NGS aggregation for CH4 ----------########## 
+
+#-- NGS --#
+FCH4_NGS <- calculate_NGS(FCH4_unc_cumsum)
+
+#-- GS ---# 
+FCH4_GS <- calculate_GS(sdAggDay_RF_FCH4, "mean", iter_ind)
 
 ```
 
@@ -1501,8 +1353,24 @@ write.csv(annual_budget, paste0(here::here(), "/df/annual_budget.csv"))
 
 
 # calculate seasonal net C budget
-
-
+seasonal_budget <- data.frame(period = year(NEE_GS$date)-1, 
+                        GS_NEE = NEE_GS$mean,
+                        GS_NEE_CI = NEE_GS$joint_CI, 
+                        GS_GPP = GPP_GS$mean, 
+                        GS_GPP_CI = GPP_GS$joint_CI, 
+                        GS_Reco = Reco_GS$mean, 
+                        GS_Reco_CI = Reco_GS$joint_CI, 
+                        GS_CH4 = FCH4_GS$mean, 
+                        GS_CH4_CI = FCH4_GS$joint_CI, 
+                        NGS_NEE = NEE_NGS$mean,
+                        NGS_NEE_CI = NEE_NGS$joint_CI, 
+                        NGS_GPP = GPP_NGS$mean, 
+                        NGS_GPP_CI = GPP_NGS$CI, 
+                        NGS_Reco = Reco_NGS$mean, 
+                        NGS_Reco_CI = Reco_NGS$CI, 
+                        NGS_CH4 = FCH4_NGS$mean, 
+                        NGS_CH4_CI = FCH4_NGS$CI
+                        )
 
 
 
@@ -1514,6 +1382,257 @@ write.csv(annual_budget, paste0(here::here(), "/df/annual_budget.csv"))
 
 
 # Daily plots 
+
+
+```{r data wrangling and function , include = F, message = F, warning = F}
+# fill long gaps after MDS gapfilling with values from random forest gapfilling
+long_gap2 <- BB1$DATE >= as.POSIXct("2015-12-01 00:30:00", tz = "UTC") &
+  BB1$DATE < as.POSIXct("2016-02-21 00:30:00", tz = "UTC")
+long_gap <- BB1$DATE >= as.POSIXct("2016-10-22 00:30:00", tz = "UTC") &
+  BB1$DATE < as.POSIXct("2017-01-21 00:30:00", tz = "UTC")
+
+
+BB1$NEE_RF <- RF_NEE$NEE_RF_filled  # random forest gapfill
+BB1$NEE_f_RF <- BB1$NEE_f
+BB1$NEE_RF_fsd <- RF_NEE$NEE_RF_filled_SD
+
+# fill all NA values with values from random forest
+BB1$NEE_f_RF[long_gap] <- BB1$NEE_RF[long_gap]
+BB1$NEE_f_RF[long_gap2] <- BB1$NEE_RF[long_gap2]
+
+
+# check if there are still gaps
+which(is.na(BB1$NEE_f_RF))
+
+
+BB1$GPP_f_RF <- BB1$Reco - BB1$NEE_f_RF
+
+
+
+
+########### BB flux ############
+
+# BB_flux <- BB1 %>%
+#   select (c(DATE, date, jday, month_local, Year_local, time, period, season,
+#             Tau, ET, RH, u., jday, co2_flux, ch4_flux, NEE_f,
+#             Reco, GPP_f, GPP_DT, Reco_DT, FCH4_f, FCH4_gf_RF,
+#             NEE_f_RF, GPP_f_RF)) %>%
+#   dplyr::rename(year_local = Year_local)
+
+BB_flux <- BB1 %>%
+  select (c(DATE, date, jday, month_local, Year_local, time, period, season,
+            Tau, ET, RH, u., jday, co2_flux, ch4_flux, NEE_f,
+            Reco, GPP_f, GPP_DT, Reco_DT, FCH4_f)) %>%
+  dplyr::rename(year_local = Year_local)
+
+
+# function 
+plot_daily <- function(data, variable, label, ma = 15) {
+  # browser()
+  if(ma == 1) {
+    data %>% 
+    ggplot() +
+    geom_line(aes(x = date, y = {{variable}}), col = "navy") +
+    labs(x = "year", 
+         y = label) +
+    # theme(legend.position="none") +
+    theme_bw()
+  } else {
+    data %>% 
+    ggplot() +
+    geom_point(aes(x = date, y = {{variable}}, col = "daily")) +
+    geom_line(aes(x = date, y = rollmean({{variable}}, ma, fill = NA), col = "smoothed")) +
+    scale_color_manual(values = c("daily" = "lightblue", 
+                                  "smoothed" = "navy")) +
+    labs(x = "year", 
+         y = label, 
+         colour = "") +
+    theme_bw()  
+  }
+}
+
+plot_monthly <- function(main_data, mean_data){
+  main_data%>%
+  ggplot() +
+    geom_bar(aes(x = month, y = value, fill = as.factor(period)), 
+             position = position_dodge(), stat="identity") +
+    geom_line(data = mean_data, aes(x = month, y = value, group = 1)) +
+    geom_point(data = mean_data, aes(x = month, y = value, group = 1)) +
+    facet_wrap(vars(variable_lab), ncol = 1,
+               scales = "free_y",
+               strip.position = "left", 
+               # labeller = label_parsed
+               ) +
+    labs(x = "", y = "", fill = "Year") +
+    theme_bw()+
+    theme(strip.background = element_blank(),
+          strip.placement = "outside") 
+}
+
+plot_monthly_anom <- function(main_data, anom_data){
+  main_data%>%
+  ggplot() +
+    geom_bar(data= anom_data, aes(x = month, y = value), 
+             position = position_dodge(), stat="identity") +
+    geom_line(aes(x = month, y = value, group = 1)) +
+    facet_wrap(vars(variable_lab), ncol = 1,
+               scales = "free_y",
+               strip.position = "left", 
+               # labeller = label_parsed
+               ) +
+    # labs(x = "", y = "", fill = "Year") +
+    scale_y_continuous(name = "", 
+      sec.axis = sec_axis(~./2, name = "Productivity % of best", 
+        labels = "")
+      ) +
+    theme_bw()+
+    theme(strip.background = element_blank(),
+          strip.placement = "outside") 
+}
+
+```
+
+
+```{r Data wrangling for fluxes, include = F, message = F, warning = F}
+#Conversion factors
+ch4_conv <- 12.01/(10^6)
+co2_conv <- 12.01/(10^6) 
+d.avg <- 1800 * 48  # 60s * 30min * 2 hours * 24 hours
+
+#TO FILTER NON GF DATA TO DAYS WHERE ONLY 60% OR MORE IS PRESENT
+daily.nGF <- BB_flux %>%
+  dplyr::select(c(year_local, jday, month_local, co2_flux, ch4_flux)) %>%
+  drop_na()
+
+obs_count <- daily.nGF %>% 
+  group_by(year_local, jday) %>% 
+  tally() %>% 
+  ungroup()
+
+daily.nGF <- daily.nGF %>%
+  group_by(year_local, jday) %>% 
+  summarize(co2 = mean(co2_flux),
+            ch4 = mean(ch4_flux)) %>%
+  mutate(co2gC = co2 * d.avg * co2_conv) %>%
+  mutate(ch4gC = ch4* d.avg * co2_conv) %>%
+  mutate(ch4mgC = ch4gC * 1000) %>% 
+  ungroup() %>% 
+  mutate(n = obs_count$n) %>% 
+  # filter(n > 48 * 0.6) %>% 
+  mutate(date = as.POSIXct(paste(year_local, jday, sep = "-"), format = "%Y-%j"))
+
+daily.nGF[which(daily.nGF$n > 48 * 0.6), 2:6] <- NA
+
+  
+# daily.nGF$month_local <- as.factor(daily.nGF$month_local)
+
+daily <- BB_flux %>%
+  ddply("date", summarize,
+            NEE_f = mean(NEE_f),
+            NEE_f_RF = mean(NEE_f_RF),
+            GPP_DT = mean(GPP_DT),
+            GPP_f = mean(GPP_f),
+            GPP_f_RF = mean(GPP_f_RF),
+            Reco = mean(Reco),
+            Reco_DT = mean(Reco_DT),
+            CH4_f_RF = mean(FCH4_gf_RF),
+            CH4_f = mean(FCH4_f)) %>%
+  mutate(NEEgC_f = NEE_f * d.avg * co2_conv, 
+         NEEgC_f_RF = NEE_f_RF * d.avg * co2_conv,
+         GPPgC_DT = GPP_DT * d.avg * co2_conv, 
+         GPPgC_f = GPP_f *d.avg * co2_conv,
+         GPPgC_f_RF = GPP_f_RF * d.avg * co2_conv,
+         RecogC = Reco * d.avg * co2_conv, 
+         RecogC_DT = Reco_DT * d.avg * co2_conv,
+         CH4gC_f = CH4_f * d.avg * ch4_conv, 
+         CH4mgC_f = CH4gC_f * 1000,
+         CH4gC_f_RF = CH4_f_RF * d.avg * ch4_conv,
+         CH4mgC_f_RF = CH4gC_f_RF * 1000,
+         year_local = year(date), 
+         month_local = month(date), 
+         floor_date = floor_date(date, "month"))
+
+
+
+# set year period
+y_2015_2016 <- daily$date >= "2015-06-20" & daily$date < "2016-06-20"
+y_2016_2017 <- daily$date >= "2016-06-20" & daily$date < "2017-06-20"
+y_2017_2018 <- daily$date >= "2017-06-20" & daily$date < "2018-06-20"
+y_2018_2019 <- daily$date >= "2018-06-20" & daily$date < "2019-06-20"
+y_2019_2020 <- daily$date >= "2019-06-20" & daily$date < "2020-06-20"
+y_2020_2021 <- daily$date >= "2020-06-20" & daily$date < "2021-06-20"
+
+
+
+daily$period[y_2015_2016] <- "2015-2016"
+daily$period[y_2016_2017] <- "2016-2017"
+daily$period[y_2017_2018] <- "2017-2018"
+daily$period[y_2018_2019] <- "2018-2019"
+daily$period[y_2019_2020] <- "2019-2020"
+daily$period[y_2020_2021] <- "2020-2021"
+
+# set season 
+GS <- daily$month_local %in% c(4, 5, 6, 7, 8, 9)
+NGS <- daily$month_local %in% c(10, 11, 12, 1, 2, 3)
+daily$season[GS] <- "growing season"
+daily$season[NGS] <- "non-growing season"
+
+cumsum <- daily %>% 
+  group_by(period) %>% 
+  arrange(date) %>% 
+  mutate(cumNEE = cumsum(NEEgC_f), 
+         cumNEE_RF = cumsum(NEEgC_f_RF),
+         cumReco = cumsum(RecogC),
+         cumGPP = cumsum(GPPgC_f), 
+         cumGPP_RF = cumsum(GPPgC_f_RF),
+         cumCH4 = cumsum(CH4gC_f_RF)
+         ) %>% 
+  ungroup()
+
+monthly <- daily %>% 
+   ddply(c("floor_date"), summarize,
+        length = length(NEEgC_f),
+        NEEgC_f = mean(NEEgC_f) * length, # * length(NEEgC_f) for month^-1
+        NEEgC_f_RF = mean(NEEgC_f_RF)* length,
+        GPPgC_f = mean(GPPgC_f)* length,
+        GPPgC_f_RF = mean(GPPgC_f_RF)* length,
+        RecogC = mean(RecogC)* length,
+        CH4gC_f = mean(CH4gC_f)* length,
+        CH4gC_f_RF = mean(CH4gC_f_RF)* length) %>% 
+  mutate(month_local = month(floor_date))
+
+monthly_means <- monthly %>% 
+  ddply("month_local", summarize, 
+       NEEgC_f = mean(NEEgC_f, na.rm = T),
+       NEEgC_f_RF = mean(NEEgC_f_RF, na.rm = T), 
+       GPPgC_f = mean(GPPgC_f, na.rm = T),
+       GPPgC_f_RF = mean(GPPgC_f_RF, na.rm = T), 
+       RecogC = mean(RecogC, na.rm = T),
+       CH4gC_f = mean(CH4gC_f, na.rm = T),
+       CH4gC_f_RF = mean(CH4gC_f_RF, na.rm = T))
+# daily$month_local <- as.factor(daily$month_local)
+
+monthly_anom <- monthly
+for(i in 1:nrow(monthly)){ 
+  monthly_anom[i, c(3:8)] <- monthly_anom[i, c(3:8)] -  
+    monthly_means[monthly$month_local[i], c(2:7)]
+  }
+
+# dailyGS <- daily[(daily$jday >= 92 & daily$jday <= 274), ] 
+# dailyNGS <-daily[(daily$jday < 92 | daily$jday >=275), ] 
+
+
+# Cbudget <- daily %>%
+#   dplyr::select(c(Site, month_local, jday, CH4mgC_f_RF, CH4gC_f_RF, NEEgC_f)) %>%
+#   group_by(Site, month_local) %>%
+#   summarise(CH4gCcum = cumsum(CH4gC_f_RF),
+#             CH4mgcum = cumsum(CH4mgC_f_RF),
+#             NEEgCcum = cumsum(NEEgC_f),
+#             NEEgC = NEEgC_f,
+#             CH4gC = CH4gC_f_RF,
+#             CH4mgC = CH4mgC_f_RF,
+#             jday = jday)
+```
 
 ## Non gap-filled $CO_2$ & $CH_4$ Fluxes 
 
