@@ -49,9 +49,9 @@ library(gtools)
 
 # define directory
 
-dir_rf <- "G:/.shortcut-targets-by-id/1txCh9lZ7VGCujXGvBaJCMVnuxT-65q4K/Micromet Lab/Projects/2014-Burns\ Bog/Flux-tower (1)/flux_data/for_uncertainty/RF_results"
+dir_rf <- "G:\\.shortcut-targets-by-id\\1txCh9lZ7VGCujXGvBaJCMVnuxT-65q4K\\Micromet Lab\\Projects\\2014-Burns Bog\\Flux-tower\\flux_data\\for_uncertainty\\RF_results"
 
-dir_unc <- "G:/.shortcut-targets-by-id/1txCh9lZ7VGCujXGvBaJCMVnuxT-65q4K/Micromet Lab/Projects/2014-Burns\ Bog/Flux-tower (1)/flux_data/for_uncertainty"
+dir_unc <- "G:\\.shortcut-targets-by-id\\1txCh9lZ7VGCujXGvBaJCMVnuxT-65q4K\\Micromet Lab\\Projects\\2014-Burns Bog\\Flux-tower\\flux_data\\for_uncertainty"
 
 ## read random forest gap-filled NEE result (already averaged)
 RF_NEE <- readRDS(paste0(dir_rf,"/BB_NEE_rf_result_for_uncertainty"))
@@ -82,9 +82,9 @@ BB1 <- BB1 %>%
 
 # filter date
 BB1 <- BB1 %>% 
-  filter(date >= as.POSIXct("2015-10-01 00:30:00", tz = "UTC") & date < as.POSIXct("2021-10-01 00:00:00", tz = "UTC")) 
+  filter(DATE >= as.POSIXct("2015-10-01 00:30:00", tz = "UTC") & DATE < as.POSIXct("2021-10-01 00:00:00", tz = "UTC")) 
 REddyProcOutput <- REddyProcOutput %>% 
-  filter(date >= as.POSIXct("2015-10-01 00:30:00", tz = "UTC") & date < as.POSIXct("2021-10-01 00:00:00", tz = "UTC")) 
+  filter(date >= "2015-10-01" & date < "2021-10-01") 
 
 
 # function for setting year period
@@ -1186,7 +1186,7 @@ GPP_RF1_cumsum <- data.frame(date = GPP_RF1_cumsum_NEE$cumsum$date,
 ### MDS 2 
 ustar_ind <- grep("GPP", colnames(sdAggDayUstar_GPP), value = T)
 GPP_MDS2_cumsum <- sdAggDayUstar_GPP %>% 
-  filter(date >= "2016-02-21 00:30:00" & date <"2016-06-20 00:30:00") %>%
+  filter(date >= "2016-02-21 00:30:00" & date <"2016-10-01 00:30:00") %>%
   calculate_cumsum_unc(data = .,
                              ind = ustar_ind, 
                              variable = "GPP_f", 
@@ -1224,7 +1224,7 @@ GPP_cumsum_2015_2016 <- smartbind(select(GPP_MDS1_cumsum[[1]], c("date", "SD", "
 
 ### MDS 3
 GPP_MDS3_cumsum <- sdAggDayUstar_GPP %>% 
-  filter(date >= "2016-06-20 00:30:00" & date < "2016-10-22 00:30:00") %>% 
+  filter(date >= "2016-10-01 00:30:00" & date < "2016-10-22 00:30:00") %>% 
   calculate_cumsum_unc(data = .,
                              ind = ustar_ind, 
                              variable = "GPP_f", 
@@ -1263,7 +1263,7 @@ GPP_RF2_cumsum <- data.frame(date = GPP_RF2_cumsum_NEE$cumsum$date,
 ### MDS 4 
 ustar_ind <- grep("GPP", colnames(sdAggDayUstar_GPP), value = T)
 GPP_MDS4_cumsum <- sdAggDayUstar_GPP %>% 
-  filter(date >= "2017-01-21 00:30:00" & date < "2017-06-20 00:30:00") %>% 
+  filter(date >= "2017-01-21 00:30:00" & date < "2017-10-01 00:30:00") %>% 
   calculate_cumsum_unc(data = .,
                        ind = ustar_ind, 
                        variable = "GPP_f", 
@@ -1378,7 +1378,8 @@ result_RF_FCH4_wide <- result_RF_FCH4 %>%
 sdAggDay_RF_FCH4 <- compute_sdAggDayUstar(result_RF_FCH4_wide, "RF") %>% 
   set_period(.)
 
-period <- unique(sdAggDay_RF_FCH4$period)[1:6]
+period <- unique(sdAggDay_RF_FCH4$period)
+period <- period[which(!is.na(period))]
 iter_ind <- grep("X", colnames(sdAggDay_RF_FCH4), value = T)
 
 cumsum_i <- NA
@@ -1441,7 +1442,7 @@ FCH4_unc_cumsum_annual <- FCH4_unc_cumsum %>%
 
 ```
 
-```{r save plot}
+```{r save plots and docs}
 
 print(NEE_cumsum_plot)
 ggsave("plots/NEE_cumsum_plot.png")
@@ -1452,11 +1453,24 @@ ggsave("plots/Reco_cumsum_plot.png")
 print(FCH4_cumsum_plot)
 ggsave("plots/FCH4_cumsum_plot.png")
 
+
+# save calculations 
+daily_unc <- data.frame(date = aggUnc_NEE_cumsum$date, 
+                        NEE = aggUnc_NEE_cumsum$mean, 
+                        NEE_CI = aggUnc_NEE_cumsum$joint_CI, 
+                        GPP = GPP_ustar_cumsum$mean, 
+                        GPP_CI = GPP_ustar_cumsum$CI, 
+                        RECO = Reco_ustar_cumsum$mean, 
+                        RECO_CI = Reco_ustar_cumsum$CI)
+write.csv(daily_unc, paste0(here::here(), "/df/daily_filled_NEE.csv"))
+
 ```
 
 
-```{r GHG budget} 
+```{r C and GHG budget} 
 
+
+# calculate net C and GHG budgets along with their uncertainties
 annual_budget <- data.frame(
                      date = NEE_joint_cumsum_annual$date, 
                      period = NEE_joint_cumsum_annual$period,
@@ -1483,296 +1497,22 @@ annual_budget <- data.frame(
          GHG_GWP_100_CI = sqrt((NEEgC_f_RF_CI* 44.01 / 12.01)^2 + (CH4gC_f_RF_CI * 16.04 / 12.01 * 28)^2), 
   )
 
-write.csv(annual_budget, paste0(here::here(), "/annual_budget.csv"))
+write.csv(annual_budget, paste0(here::here(), "/df/annual_budget.csv"))
+
+
+# calculate seasonal net C budget
+
+
+
+
 
 
 ```
 
-```{r uncertainty analysis (original), eval = F}
 
-# ###### wrangling REddyProcOutput ######
-# 
-# REddyProcOutput <- REddyProcOutput %>% 
-#   mutate(date = as.Date(as.POSIXct(sDateTime - 15*60))) %>% # midnight belongs to the previou
-#   mutate(year_local = year(date), 
-#          month_local = month(date), 
-#          floor_date = floor_date(date, "month")
-#   ) %>% 
-#   rename(ustar_season = season)
-# 
-# # set year period
-# y_2015_2016 <- REddyProcOutput$date >= "2015-06-20" & REddyProcOutput$date < "2016-06-20"
-# y_2016_2017 <- REddyProcOutput$date >= "2016-06-20" & REddyProcOutput$date < "2017-06-20"
-# y_2017_2018 <- REddyProcOutput$date >= "2017-06-20" & REddyProcOutput$date < "2018-06-20"
-# y_2018_2019 <- REddyProcOutput$date >= "2018-06-20" & REddyProcOutput$date < "2019-06-20"
-# y_2019_2020 <- REddyProcOutput$date >= "2019-06-20" & REddyProcOutput$date < "2020-06-20"
-# y_2020_2021 <- REddyProcOutput$date >= "2020-06-20" & REddyProcOutput$date < "2021-06-20"
-# 
-# REddyProcOutput$period[y_2015_2016] <- "2015-2016"
-# REddyProcOutput$period[y_2016_2017] <- "2016-2017"
-# REddyProcOutput$period[y_2017_2018] <- "2017-2018"
-# REddyProcOutput$period[y_2018_2019] <- "2018-2019"
-# REddyProcOutput$period[y_2019_2020] <- "2019-2020"
-# REddyProcOutput$period[y_2020_2021] <- "2020-2021"
-# 
-# # set season 
-# GS <- REddyProcOutput$month_local %in% c(4, 5, 6, 7, 8, 9)
-# NGS <- REddyProcOutput$month_local %in% c(10, 11, 12, 1, 2, 3)
-# REddyProcOutput$season[GS] <- "growing season"
-# REddyProcOutput$season[NGS] <- "non-growing season"
-# 
-# ## summary
-# summary(REddyProcOutput$NEE_uStar_fsd)
-# plot(NEE_uStar_fsd ~ NEE_uStar_fall, slice(REddyProcOutput, sample.int(nrow(REddyProcOutput),400)))
-# 
-# 
-# ###### Random Uncertainty ##########
-# 
-# # First we need to quantify the error terms, i.e. model-data residuals. For all the records of good quality, we have an original measured value NEE_uStar_orig and modelled value from MDS gapfilling, NEE_uStar_fall. The residual of bad-quality data is set to missing.
-# 
-# REddyProcOutput <- REddyProcOutput %>%
-#   mutate(
-#     resid = ifelse(NEE_uStar_fqc == 0, NEE_uStar_orig - NEE_uStar_fall, NA )
-#   )
-# 
-# # #Now we can inspect the the autocorrelation of the errors.
-#  
-# acf(REddyProcOutput$resid, na.action = na.pass, main = "")
-# 
-# # Computation of effective number of observations is provided by function computeEffectiveNumObs from package lognorm based on the empirical autocorrelation function for given model-data residuals.
-# 
-# autoCorr <- computeEffectiveAutoCorr(REddyProcOutput$resid)
-# 
-# #Now we can use the formulas for the sum and the mean of correlated normally distributed variables to compute the uncertainty of the mean.
-# 
-# 
-# #----- Daily Aggregation for random uncertainty ------#
-# 
-# 
-# aggDayRand <- REddyProcOutput %>% 
-#   ddply("date", summarize, 
-#         DateTime = first(sDateTime), 
-#         nRec = sum(NEE_uStar_fqc == 0, na.rm = TRUE),
-#         nEff = computeEffectiveNumObs(resid, effAcf = !!autoCorr, na.rm = TRUE),
-#         NEE = mean(NEE_uStar_f, na.rm = TRUE)* d.avg * co2_conv,
-#         sdNEE = if (nEff <= 1)
-#           NA_real_
-#           else sqrt(mean(NEE_uStar_fsd^2, na.rm = TRUE) / (nEff - 1)* d.avg * co2_conv),
-#         sdNEEuncorr = if (nRec == 0)
-#           NA_real_
-#         else sqrt(mean(NEE_uStar_fsd^2, na.rm = TRUE) / (nRec - 1)* d.avg * co2_conv)
-#         ) %>% 
-#   mutate( 
-#     NEE_U = NEE + sdNEE, 
-#     NEE_L = NEE - sdNEE)
-# 
-# aggDayRand
-# 
-# # Plot daily random uncertainty
-# 
-# (aggDayRand %>% 
-#   filter(date >= "2020-03-01" & date <= "2020-05-01") %>%
-#   ggplot(aes(x = date, y = NEE)) +
-#     geom_line() +
-#     geom_ribbon(aes(ymin = NEE_L, ymax = NEE_U), 
-#               alpha=0.1, 
-#               linetype="dashed",
-#               color="grey") +
-#     labs(x = "year", 
-#          y = bquote('NEE (g C' ~m^-2~ day^-1*')'), 
-#          colour = "") +
-#     theme_bw())
-# 
-# 
-# #--------- annual aggregation for random uncertainty ---------#
-# 
-# 
-# aggAnnualRand <- REddyProcOutput %>% 
-#   ddply("period", summarize, 
-#         DateTime = first(sDateTime), 
-#         nRec = sum(NEE_uStar_fqc == 0, na.rm = TRUE),
-#         nEff = computeEffectiveNumObs(resid, effAcf = !!autoCorr, na.rm = TRUE),
-#         NEE = mean(NEE_uStar_f, na.rm = TRUE)* d.avg * co2_conv * 365,
-#         sdNEE = if (nEff <= 1)
-#           NA_real_
-#           else sqrt(mean(NEE_uStar_fsd^2, na.rm = TRUE) / (nEff - 1)* d.avg * co2_conv * 365),
-#         sdNEEuncorr = if (nRec == 0)
-#           NA_real_
-#         else sqrt(mean(NEE_uStar_fsd^2, na.rm = TRUE) / (nRec - 1)* d.avg * co2_conv * 365)
-#         ) %>% 
-#   mutate( 
-#     NEE_U = NEE + sdNEE, 
-#     NEE_L = NEE - sdNEE)
-# 
-# 
-# ######### systematic uncertainty #########
-# 
-# # uncertainty due to different u* threshold
-# 
-# 
-# #--------------- Daily aggregation for systematic uncertainty--------------#
-# 
-# # Compute the mean NEE for each u* threshold 
-# 
-# aggDayUstar <- REddyProcOutput %>% 
-#   ddply("date", summarize, 
-#         DateTime = first(sDateTime), 
-#         ustar = mean(NEE_uStar_f, na.rm = TRUE)* d.avg * co2_conv,
-#         U05 = mean(NEE_U05_f, na.rm = TRUE)* d.avg * co2_conv,
-#         U50 = mean(NEE_U50_f, na.rm = TRUE)* d.avg * co2_conv,
-#         U95 = mean(NEE_U95_f, na.rm = TRUE)* d.avg * co2_conv,
-#         )
-# 
-# 
-# aggDayUstar <- REddyProcOutput %>% 
-#   ddply("date", summarize, 
-#         DateTime = first(sDateTime), 
-#         ustar = mean(NEE_uStar_f, na.rm = TRUE)* d.avg * co2_conv,
-#         U05 = mean(NEE_U05_f, na.rm = TRUE)* d.avg * co2_conv,
-#         U50 = mean(NEE_U50_f, na.rm = TRUE)* d.avg * co2_conv,
-#         U95 = mean(NEE_U95_f, na.rm = TRUE)* d.avg * co2_conv,
-#         )
-# 
-# sdAggDayUstar <- cbind(aggDayUstar$DateTime, transform(aggDayUstar[ , c(3:6)], 
-#                            SD=apply(aggDayUstar,1, sd, na.rm = TRUE))) %>% 
-#                   mutate(
-#                     date = aggDayUstar$DateTime,
-#                     NEE = ustar,
-#                     NEE_U = ustar + SD,
-#                     NEE_L = ustar - SD,
-#                   )
-# 
-# # plot daily u* uncertainty 
-# (sdAggDayUstar %>% 
-#   filter(date >= "2020-03-01" & date <= "2020-05-01") %>% 
-#   ggplot(aes(x = date, y = NEE)) +
-#     geom_line() +
-#     geom_ribbon(aes(ymin = NEE_L, ymax = NEE_U), 
-#               alpha=0.1, 
-#               linetype="dashed",
-#               color="grey") +
-#     labs(x = "year", 
-#          y = bquote('NEE (g C' ~m^-2~ day^-1*')'), 
-#          colour = "") +
-#     theme_bw())
-# 
-# 
-# #--------- annual aggregation for random uncertainty ---------#
-# 
-# # Compute the mean NEE for each u* threshold 
-# aggAnnualUstar <- REddyProcOutput %>% 
-#   ddply("period", summarize, 
-#         DateTime = first(sDateTime), 
-#         ustar = mean(NEE_uStar_f, na.rm = TRUE)* d.avg * co2_conv * 365.5,
-#         U05 = mean(NEE_U05_f, na.rm = TRUE)* d.avg * co2_conv * 365.5,
-#         U50 = mean(NEE_U50_f, na.rm = TRUE)* d.avg * co2_conv * 365.5,
-#         U95 = mean(NEE_U95_f, na.rm = TRUE)* d.avg * co2_conv * 365.5,
-#         )
-# 
-# sdAggAnnualUstar <- cbind(aggAnnualUstar$period, transform(aggAnnualUstar[ , c(3:6)], 
-#                            SD=apply(aggAnnualUstar,1, sd, na.rm = TRUE))) %>% 
-#                   mutate(
-#                     date = aggAnnualUstar$DateTime,
-#                     NEE = ustar,
-#                     NEE_U = ustar + SD,
-#                     NEE_L = ustar - SD,
-#                   )
-# 
-# 
-# #--------- GS/NGS aggregation for random uncertainty ---------#
-# 
-# # number of obs per season
-# count <- REddyProcOutput %>%
-#   count(period, season)
-# 
-# # Compute the mean NEE for each u* threshold 
-# aggGSUstar <- REddyProcOutput %>% 
-#   ddply(c("period", "season"), summarize, 
-#         DateTime = first(sDateTime), 
-#         ustar = mean(NEE_uStar_f, na.rm = TRUE)* d.avg * co2_conv,
-#         U05 = mean(NEE_U05_f, na.rm = TRUE)* d.avg * co2_conv,
-#         U50 = mean(NEE_U50_f, na.rm = TRUE)* d.avg * co2_conv,
-#         U95 = mean(NEE_U95_f, na.rm = TRUE)* d.avg * co2_conv,
-#         ) %>%
-#   mutate(day_count = count$n/48,  # n of obs/season divided by 48 obs/day to get n day/season
-#         ustar = ustar * day_count,
-#         U05 = U05 * day_count,
-#         U50 = U50 * day_count,
-#         U95 = U95 * day_count)
-# 
-# sdAggGSUstar <- cbind(aggGSUstar$period, aggGSUstar$season, transform(aggGSUstar[ , c(4:7)], 
-#                            SD=apply(aggGSUstar,1, sd, na.rm = TRUE))) %>% 
-#                   mutate(
-#                     NEE = ustar,
-#                     NEE_U = ustar + SD,
-#                     NEE_L = ustar - SD,
-#                   )
-# 
-# 
-# ######### calculation from Marion  
-# 
-# #NEE
-# 
-# MN_aggAnnualUstar <- REddyProcOutput %>% 
-#   ddply("period", summarize, 
-#         L.2 = mean(NEE_U05_f, na.rm = TRUE) * d.avg * co2_conv * 365.5,
-#         U.2 = mean(NEE_U95_f, na.rm = TRUE) * d.avg * co2_conv * 365.5) %>% 
-#   mutate(std.2 = (U.2 - L.2)/(2 * 1.645), 
-#          CI95.2 = std.2 * 1.96)
-# 
-# 
-# 
-# 
-# ######## joint uncertainty ###########
-# 
-# 
-# #---------- daily joint uncertainty -----------#
-# 
-# sdDayNEE <- data.frame(
-#   date = aggDayRand$date,
-#   sdRand = aggDayRand$sdNEE,
-#   sdUstar = sdAggDayUstar$SD,
-#   sdComb = sqrt(aggDayRand$sdNEE^2 + sdAggDayUstar$SD^2) 
-# ) %>% 
-#   mutate(
-#     NEE = aggDayRand$NEE,
-#     NEE_U = aggDayRand$NEE + sdComb,
-#     NEE_L = aggDayRand$NEE - sdComb,
-#   )
-# 
-# 
-# # Plot daily joint uncertainty 
-# (sdDayNEE %>% 
-#   filter(date >= "2020-03-01" & date <= "2020-05-01") %>% 
-#   ggplot(aes(x = date, y = NEE)) +
-#     geom_line() +
-#     geom_ribbon(aes(ymin = NEE_L, ymax = NEE_U), 
-#               alpha=0.1, 
-#               linetype="dashed",
-#               color="grey") +
-#     labs(x = "year", 
-#          y = bquote('NEE (g C' ~m^-2~ day^-1*')'), 
-#          colour = "") +
-#     theme_bw())
-# 
-# 
-# #---------- annual joint uncertainty -----------#
-# 
-# sdAnnualNEE <- data.frame(
-#   period = aggAnnualRand$period,
-#   sdRand = aggAnnualRand$sdNEE,
-#   sdUstar = sdAggAnnualUstar$SD,
-#   sdComb = sqrt(aggAnnualRand$sdNEE^2 + sdAggAnnualUstar$SD^2) 
-# ) %>% 
-#   mutate(
-#     NEE = aggAnnualRand$NEE,
-#     NEE_U = aggAnnualRand$NEE + sdComb,
-#     NEE_L = aggAnnualRand$NEE - sdComb,
-#   )
-# 
-# 
 
-```
+
+
 # Daily plots 
 
 ## Non gap-filled $CO_2$ & $CH_4$ Fluxes 
