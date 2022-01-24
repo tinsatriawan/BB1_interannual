@@ -3,11 +3,10 @@ title: "Prelim"
 author: "Tin Satriawan"
 date: "20/01/2022"
 output: html_document
+editor_options: 
+  chunk_output_type: console
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
@@ -51,11 +50,15 @@ dir_rf <- "G:\\.shortcut-targets-by-id\\1txCh9lZ7VGCujXGvBaJCMVnuxT-65q4K\\Micro
 
 dir_unc <- "G:\\.shortcut-targets-by-id\\1txCh9lZ7VGCujXGvBaJCMVnuxT-65q4K\\Micromet Lab\\Projects\\2014-Burns Bog\\Flux-tower\\flux_data\\for_uncertainty"
 
-# ## read random forest gap-filled NEE result (already averaged)
-RF_NEE <- readRDS(paste0(dir_rf,"/BB_NEE_rf_result_for_uncertainty"))
+
 
 ## read NEE RF gapfilling with 20x iteration
 result_RF_NEE <- readRDS(paste0(dir_rf,"/BB_NEE_rf_result"))
+# average over 20 iteration
+RF_NEE <- result_RF_NEE %>% pivot_wider(id_cols = DateTime, names_from = iteration, values_from = NEE_RF_filled)
+RF_NEE <- data.frame(DateTime = RF_NEE$DateTime, 
+                     NEE_RF_filled = rowMeans(RF_NEE[, 2:ncol(RF_NEE)]), 
+                     NEE_RF_fsd = rowSds(as.matrix(RF_NEE[, 2:ncol(RF_NEE)])))
 
 ## read CH4 RF gapfilling with 20x iteration
 result_RF_FCH4 <- read_csv(paste0(dir_rf,"/BB_FCH4_rf_result.csv"))
@@ -70,29 +73,7 @@ BB1 <- BB1 %>%
   mutate(period = NA, 
          season = NA)
 
-# filter date
-BB1 <- BB1 %>% 
-  filter(DATE >= as.POSIXct("2015-10-01 00:30:00", tz = "UTC") & DATE < as.POSIXct("2021-10-01 00:00:00", tz = "UTC")) 
-REddyProcOutput <- REddyProcOutput %>% 
-  filter(date >= "2015-10-01" & date < "2021-10-01") 
-result_RF_FCH4 <- result_RF_FCH4 %>% 
-  filter(DateTime >= as.POSIXct("2015-10-01 00:30:00", tz = "UTC") & DateTime < as.POSIXct("2021-10-01 00:00:00", tz = "UTC")) 
-result_RF_NEE <- result_RF_NEE %>% 
-  filter(DateTime >= as.POSIXct("2015-10-01 00:30:00", tz = "UTC") & DateTime < as.POSIXct("2021-10-01 00:00:00", tz = "UTC"))
 
-
-#Conversion factors
-ch4_conv <- 12.01/(10^6)
-co2_conv <- 12.01/(10^6) 
-d.avg <- 1800 * 48  # 60s * 30min * 2 hours * 24 hours
-
-```
-
-
-# Daily plots 
-
-
-```{r data wrangling and function , include = F, message = F, warning = F}
 # fill long gaps after MDS gapfilling with values from random forest gapfilling
 long_gap2 <- BB1$DATE >= as.POSIXct("2015-12-01 00:30:00", tz = "UTC") &
   BB1$DATE < as.POSIXct("2016-02-21 00:30:00", tz = "UTC")
@@ -116,21 +97,36 @@ which(is.na(BB1$NEE_f_RF))
 BB1$GPP_f_RF <- BB1$Reco - BB1$NEE_f_RF
 
 
+# filter date
+BB1 <- BB1 %>% 
+  filter(DATE >= as.POSIXct("2015-10-01 00:30:00", tz = "UTC") & DATE < as.POSIXct("2021-10-01 00:00:00", tz = "UTC")) 
+result_RF_FCH4 <- result_RF_FCH4 %>% 
+  filter(DateTime >= as.POSIXct("2015-10-01 00:30:00", tz = "UTC") & DateTime < as.POSIXct("2021-10-01 00:00:00", tz = "UTC")) 
+result_RF_NEE <- result_RF_NEE %>% 
+  filter(DateTime >= as.POSIXct("2015-10-01 00:30:00", tz = "UTC") & DateTime < as.POSIXct("2021-10-01 00:00:00", tz = "UTC"))
+
+
+#Conversion factors
+ch4_conv <- 12.01/(10^6)
+co2_conv <- 12.01/(10^6) 
+d.avg <- 1800 * 48  # 60s * 30min * 2 hours * 24 hours
+
+```
+
+
+# Daily plots 
+
+
+```{r data wrangling and function , include = F, message = F, warning = F}
 
 
 ########### BB flux ############
 
-# BB_flux <- BB1 %>%
-#   select (c(DATE, date, jday, month_local, Year_local, time, period, season,
-#             Tau, ET, RH, u., jday, co2_flux, ch4_flux, NEE_f,
-#             Reco, GPP_f, GPP_DT, Reco_DT, FCH4_f, FCH4_gf_RF,
-#             NEE_f_RF, GPP_f_RF)) %>%
-#   dplyr::rename(year_local = Year_local)
-
 BB_flux <- BB1 %>%
   select (c(DATE, date, jday, month_local, Year_local, time, period, season,
             Tau, ET, RH, u., jday, co2_flux, ch4_flux, NEE_f,
-            Reco, GPP_f, GPP_DT, Reco_DT, FCH4_f)) %>%
+            Reco, GPP_f, GPP_DT, Reco_DT, FCH4_f, FCH4_gf_RF,
+            NEE_f_RF, GPP_f_RF)) %>%
   dplyr::rename(year_local = Year_local)
 
 
@@ -198,6 +194,37 @@ plot_monthly_anom <- function(main_data, anom_data){
           strip.placement = "outside") 
 }
 
+# function for setting year period
+set_period <- function(data) {
+  y_2015_2016 <- data$date >= "2015-10-01" & data$date < "2016-10-01"
+  y_2016_2017 <- data$date >= "2016-10-01" & data$date < "2017-10-01"
+  y_2017_2018 <- data$date >= "2017-10-01" & data$date < "2018-10-01"
+  y_2018_2019 <- data$date >= "2018-10-01" & data$date < "2019-10-01"
+  y_2019_2020 <- data$date >= "2019-10-01" & data$date < "2020-10-01"
+  y_2020_2021 <- data$date >= "2020-10-01" & data$date < "2021-10-01"
+  
+  data$period[y_2015_2016] <- "2015-2016"
+  data$period[y_2016_2017] <- "2016-2017"
+  data$period[y_2017_2018] <- "2017-2018"
+  data$period[y_2018_2019] <- "2018-2019"
+  data$period[y_2019_2020] <- "2019-2020"
+  data$period[y_2020_2021] <- "2020-2021"
+  
+  data
+}
+
+# set season 
+set_season <- function(input, date_vector){
+  input$month_local <- month(date_vector)
+  GS <- input$month_local %in% c(4, 5, 6, 7, 8, 9)
+  NGS <- input$month_local %in% c(10, 11, 12, 1, 2, 3)
+  input$season <- NA
+  input$season[GS] <- "growing season"
+  input$season[NGS] <- "non-growing season"
+  input
+}
+
+
 ```
 
 
@@ -226,10 +253,10 @@ daily.nGF <- daily.nGF %>%
   mutate(ch4mgC = ch4gC * 1000) %>% 
   ungroup() %>% 
   mutate(n = obs_count$n) %>% 
-  # filter(n > 48 * 0.6) %>% 
+  # filter(n > 48 * 0.6) %>%
   mutate(date = as.POSIXct(paste(year_local, jday, sep = "-"), format = "%Y-%j"))
 
-daily.nGF[which(daily.nGF$n > 48 * 0.6), 2:6] <- NA
+daily.nGF[which(daily.nGF$n > 48 * 0.6), 2:7] <- NA
 
   
 # daily.nGF$month_local <- as.factor(daily.nGF$month_local)
@@ -263,27 +290,7 @@ daily <- BB_flux %>%
 
 
 # set year period
-y_2015_2016 <- daily$date >= "2015-06-20" & daily$date < "2016-06-20"
-y_2016_2017 <- daily$date >= "2016-06-20" & daily$date < "2017-06-20"
-y_2017_2018 <- daily$date >= "2017-06-20" & daily$date < "2018-06-20"
-y_2018_2019 <- daily$date >= "2018-06-20" & daily$date < "2019-06-20"
-y_2019_2020 <- daily$date >= "2019-06-20" & daily$date < "2020-06-20"
-y_2020_2021 <- daily$date >= "2020-06-20" & daily$date < "2021-06-20"
-
-
-
-daily$period[y_2015_2016] <- "2015-2016"
-daily$period[y_2016_2017] <- "2016-2017"
-daily$period[y_2017_2018] <- "2017-2018"
-daily$period[y_2018_2019] <- "2018-2019"
-daily$period[y_2019_2020] <- "2019-2020"
-daily$period[y_2020_2021] <- "2020-2021"
-
-# set season 
-GS <- daily$month_local %in% c(4, 5, 6, 7, 8, 9)
-NGS <- daily$month_local %in% c(10, 11, 12, 1, 2, 3)
-daily$season[GS] <- "growing season"
-daily$season[NGS] <- "non-growing season"
+daily <- daily %>% set_period() %>% set_season(date = daily$date)
 
 cumsum <- daily %>% 
   group_by(period) %>% 
@@ -462,30 +469,9 @@ BB_met <- BB1 %>%
          floor_date = floor_date(date, "month"))%>%
   ungroup()
 
-# set values to NA during the period when SWC sensor was error 8 Apr to 28 Apr
-BB_met[BB_met$date >= "2021-04-8" & BB_met$date <= "2021-04-28", "SWC"] <- NA
 
 # set period
-y_2015_2016 <- BB_met$date >= "2015-06-20" & BB_met$date < "2016-06-20"
-y_2016_2017 <- BB_met$date >= "2016-06-20" & BB_met$date < "2017-06-20"
-y_2017_2018 <- BB_met$date >= "2017-06-20" & BB_met$date < "2018-06-20"
-y_2018_2019 <- BB_met$date >= "2018-06-20" & BB_met$date < "2019-06-20"
-y_2019_2020 <- BB_met$date >= "2019-06-20" & BB_met$date < "2020-06-20"
-y_2020_2021 <- BB_met$date >= "2020-06-20" & BB_met$date < "2021-06-20"
-
-
-BB_met$period[y_2015_2016] <- "2015-2016"
-BB_met$period[y_2016_2017] <- "2016-2017"
-BB_met$period[y_2017_2018] <- "2017-2018"
-BB_met$period[y_2018_2019] <- "2018-2019"
-BB_met$period[y_2019_2020] <- "2019-2020"
-BB_met$period[y_2020_2021] <- "2020-2021"
-
-# set season 
-GS <- BB_met$month_local %in% c(4, 5, 6, 7, 8, 9)
-NGS <- BB_met$month_local %in% c(10, 11, 12, 1, 2, 3)
-BB_met$season[GS] <- "growing season"
-BB_met$season[NGS] <- "non-growing season"
+BB_met <- BB_met %>% set_period() %>% set_season(date = BB_met$date)
 
   
 met_monthly <- BB_met %>% 
@@ -498,13 +484,15 @@ met_monthly <- BB_met %>%
       PARin = mean(PARin, na.rm = T),  #u mol m-2 day-1
       SWin = mean(SWin, na.rm = T),
       VPD.y = mean(VPD.y, na.rm = T),
-      # VPD.x = mean(VPD.x),
       Precip = sum(Precip, na.rm = T), # mm per month
-      # PA_EC = mean(PA_EC),  # barrometric pressure from EC
       PA_2M = mean(PA_2M, na.rm = T),  # barrometric pressure from met
       Ta = mean(Ta, na.rm = T),  # air temp at 2 m
       SWC = mean(SWC, na.rm = T), 
-      wtd = mean(wtd, na.rm = T)) %>%
+      wtd = mean(wtd, na.rm = T), 
+      min_TS.5 = min(TS.5, na.rm = T), 
+      max_TS.5 = max(TS.5, na.rm = T),
+      min_wtd = min(wtd, na.rm = T), 
+      max_wtd = max(wtd, na.rm = T)) %>%
   mutate(month_local = month(floor_date))
 
 met_monthly_means <- met_monthly %>% 
@@ -516,13 +504,15 @@ met_monthly_means <- met_monthly %>%
       PARin = mean(PARin, na.rm = T),  
       SWin = mean(SWin, na.rm = T),
       VPD.y = mean(VPD.y, na.rm = T),
-      # VPD.x = mean(VPD.x),
       Precip = mean(Precip, na.rm = T),
-      # PA_EC = mean(PA_EC),  # barrometric pressure from EC
       PA_2M = mean(PA_2M, na.rm = T),  # barrometric pressure from met
       Ta = mean(Ta, na.rm = T),  # air temp at 2 m
       SWC = mean(SWC, na.rm = T), 
-      wtd = mean(wtd, na.rm = T))
+      wtd = mean(wtd, na.rm = T), 
+      min_TS.5 = min(TS.5, na.rm = T), 
+      max_TS.5 = max(TS.5, na.rm = T),
+      min_wtd = min(wtd, na.rm = T), 
+      max_wtd = max(wtd, na.rm = T))
 
 met_monthly_anom <- met_monthly
 # for(i in 1:nrow(met_monthly)){ 
@@ -871,31 +861,6 @@ met_labels <- c(
   )
 
 
-# met_monthly_long <- met_monthly %>%
-#   pivot_longer(cols = TS.5:wtd, names_to = "variable", values_to = "value") %>% 
-#   mutate(month_local = factor(month_local, levels = c(1:12)),
-#          month_abb = factor(month.abb[month_local], levels = month.abb), 
-#          variable_lab = factor(variable, 
-#                            levels = colnames(met_monthly)[3:16],
-#                            labels = met_labels))
-# 
-# met_monthly_means_long <- met_monthly_means %>% 
-#   pivot_longer(cols = TS.5:wtd, names_to = "variable", values_to = "value") %>% 
-#   mutate(month_local = factor(month_local, levels = c(1:12)),
-#          month_abb = factor(month.abb[month_local], levels = month.abb), 
-#          variable_lab = factor(variable, 
-#                           levels = colnames(met_monthly)[3:16],
-#                           labels = met_labels))
-# 
-# temp <-  plot_monthly(filter(met_monthly_long, 
-#                              variable %in% c("TS.5", "TS.10", "TS.50", "PARin", "SWin", "Ta")), 
-#                       filter(met_monthly_means_long,
-#                              variable %in% c("TS.5", "TS.10", "TS.50", "PARin", "SWin", "Ta")))
-# 
-# water <-  plot_monthly(filter(met_monthly_long, 
-#                              variable %in% c("Precip", "wtd", "VPD.y", "SWC", "RH")), 
-#                       filter(met_monthly_means_long,
-#                              variable %in% c("Precip", "wtd", "VPD.y", "SWC", "RH")))
 
 TS5cm <- BB_met%>%
 ggplot() +
@@ -1005,16 +970,7 @@ ggplotly(water)
 day_count <- daily %>%
   drop_na(c(NEEgC_f_RF, RecogC, GPPgC_f_RF, CH4gC_f_RF)) %>%
   dplyr::count(period)
-# 
-# flux_an_means <- daily %>%
-#   group_by(year_local) %>%
-#   summarise(NEEgC_f = mean(NEEgC_f, na.rm = T) * 365,
-#             RecogC = mean(RecogC, na.rm = T) * 365,
-#             GPPgC_f = mean(GPPgC_f, na.rm = T) * 365, 
-#             CH4_gC = mean(CH4gC_f_RF, na.rm = T) * 365) %>%
-#   ungroup() %>%
-#   mutate(day_count = day_count$n)
-#   # filter(day_count > 200)
+
 
 flux_an_sum <- daily %>%
   group_by(period) %>%
@@ -1046,20 +1002,23 @@ flux_season_sum <- daily %>%
 met_an_means <- BB_met %>%
   # mutate(year_local = year(date)) %>%
   group_by(period) %>%
-  summarise(TS.5 = mean(TS.5, na.rm = T),  # soil temp
+  summarise(min_TS.5 = min(TS.5, na.rm = T), 
+      max_TS.5 = max(TS.5, na.rm = T),
+      min_wtd = min(wtd, na.rm = T), 
+      max_wtd = max(wtd, na.rm = T), 
+      day_wtd = count(wtd > 0, na.rm = T), 
+      day_wtd2 = count(wtd < -0.1, na.rm = T),
+      day_precip = count(Precip > 0, na.rm = T), 
+      TS.5 = mean(TS.5, na.rm = T),  # soil temp
       TS.10 = mean(TS.10, na.rm = T),
       TS.50 = mean(TS.50, na.rm = T),
       RH = mean(RH, na.rm = T),  # relative humidity
       PARin = sum(PARin, na.rm = T),  
       SWin = mean(SWin, na.rm = T),
       VPD = mean(VPD.y, na.rm = T),
-      # VPD.x = mean(VPD.x, na.rm = T),
       Precip = sum(Precip, na.rm = T),
-      # PA_EC = mean(PA_EC, na.rm = T),  # barrometric pressure from EC
       PA = mean(PA_2M, na.rm = T),  # barrometric pressure from met
       Ta = mean(Ta, na.rm = T),  # air temp at 2 m
-      # WTH2 = mean(WTH2, na.rm = T),
-      # WTH1 = mean(WTH1, na.rm = T),  # water table height
       SWC = mean(SWC, na.rm = T), 
       wtd = mean(wtd, na.rm = T)) %>%
   ungroup()%>% 
@@ -1067,50 +1026,53 @@ met_an_means <- BB_met %>%
 
 met_season_sum <- BB_met %>%
   group_by(period, season) %>%
-  summarise(TS.5 = mean(TS.5, na.rm = T),  # soil temp
+  summarise(min_TS.5 = min(TS.5, na.rm = T), 
+      max_TS.5 = max(TS.5, na.rm = T),
+      min_wtd = min(wtd, na.rm = T), 
+      max_wtd = max(wtd, na.rm = T),
+      day_wtd = count(wtd > 0, na.rm = T), 
+      day_wtd2 = count(wtd < -0.1, na.rm = T),
+      day_precip = count(Precip > 0, na.rm = T), 
+      TS.5 = mean(TS.5, na.rm = T),  # soil temp
       TS.10 = mean(TS.10, na.rm = T),
       TS.50 = mean(TS.50, na.rm = T),
       RH = mean(RH, na.rm = T),  # relative humidity
       PARin = sum(PARin, na.rm = T),  
       SWin = mean(SWin, na.rm = T),
       VPD = mean(VPD.y, na.rm = T),
-      # VPD.x = mean(VPD.x, na.rm = T),
       Precip = sum(Precip, na.rm = T),
-      # PA_EC = mean(PA_EC, na.rm = T),  # barrometric pressure from EC
       PA = mean(PA_2M, na.rm = T),  # barrometric pressure from met
       Ta = mean(Ta, na.rm = T),  # air temp at 2 m
-      # WTH2 = mean(WTH2, na.rm = T),
-      # WTH1 = mean(WTH1, na.rm = T),  # water table height
       SWC = mean(SWC, na.rm = T), 
       wtd = mean(wtd, na.rm = T)) %>%
-  ungroup()%>% 
+  ungroup()%>%
   drop_na()
 
-  
-kable(flux_an_sum, caption = "Cumulative annual fluxes", 
-    col.names = c("year", 
-                  "NEE (gC m^2^ year^-1^)", 
-                  "Reco (gC m^2^ year^-1^)", 
-                  "GPP (gC m^2^ year^-1^)", 
-                  "CH~4~ (gC m^2^ year^-1^)", 
-                  "day_count")) %>% 
-kable_styling()
-
-kable(met_an_means, caption = "Annual met variables", 
-      col.names = c("year", 
-                    "T~s~~5cm~", 
-                    "T~s~~10cm~",
-                    "T~s~~50cm~", 
-                    "RH(%)", 
-                    "PAR", 
-                    "SW~in~", 
-                    "VPD", 
-                    "Precip", 
-                    "PA", 
-                    "T~a~", 
-                    "SWC",
-                    "WTD")) %>%
-kable_styling()
+#   
+# kable(flux_an_sum, caption = "Cumulative annual fluxes", 
+#     col.names = c("year", 
+#                   "NEE (gC m^2^ year^-1^)", 
+#                   "Reco (gC m^2^ year^-1^)", 
+#                   "GPP (gC m^2^ year^-1^)", 
+#                   "CH~4~ (gC m^2^ year^-1^)", 
+#                   "day_count")) %>% 
+# kable_styling()
+# 
+# kable(met_an_means, caption = "Annual met variables", 
+#       col.names = c("year", 
+#                     "T~s~~5cm~", 
+#                     "T~s~~10cm~",
+#                     "T~s~~50cm~", 
+#                     "RH(%)", 
+#                     "PAR", 
+#                     "SW~in~", 
+#                     "VPD", 
+#                     "Precip", 
+#                     "PA", 
+#                     "T~a~", 
+#                     "SWC",
+#                     "WTD")) %>%
+# kable_styling()
 
 
 write.csv(flux_an_sum, "flux_annual_summary.csv")
@@ -1144,10 +1106,6 @@ write.csv(met_season_sum, "met_season_summary.csv")
 # correlation for annual values
 corr <- left_join(met_an_means, flux_an_sum) %>%
   mutate(year = substr(period, 1, 4))
-# ggscatter(corr, x = "wtd", y = "NEEgC_f_RF",
-#           add = "reg.line", conf.int = TRUE,
-#           cor.coef = T, cor.method = "pearson",
-#           xlab = "wtd", ylab = "cumNEE")
 
 # correlation for growing & non-growing season
 corr_GS <- left_join(filter(flux_season_sum, season == "growing season"), filter(met_season_sum, season == "growing season"))%>%
@@ -1156,10 +1114,17 @@ corr_GS <- left_join(filter(flux_season_sum, season == "growing season"), filter
 corr_NGS <- left_join(filter(flux_season_sum, season == "non-growing season"), filter(met_season_sum, season == "non-growing season"))%>%
   mutate(year = substr(period, 1, 4))
 
+corr_an_GS <- left_join(flux_an_sum, filter(met_season_sum, season == "growing season"))%>%
+  mutate(year = substr(period, 1, 4))
+
+corr_an_NGS <- left_join(flux_an_sum, filter(met_season_sum, season == "non-growing season"))%>%
+  mutate(year = substr(period, 1, 4))
+
+
 
 
 flux_loop <- c("NEEgC_f_RF", "RecogC", "GPPgC_f_RF", "CH4_gC_RF")
-met_loop <- c("TS.5", "Ta", "VPD", "wtd", "PARin", "Precip", "GPPgC_f_RF")
+met_loop <- c("TS.5", "Ta", "VPD", "wtd", "PARin", "Precip", "GPPgC_f_RF", "min_TS.5", "max_TS.5", "min_wtd", "max_wtd", "PA", "RH", "day_wtd", "day_wtd2", "day_precip")
 
 
 ###### for annual correlation ########
@@ -1231,6 +1196,52 @@ for (i in flux_loop) {
   }
 }
 
+###### annual flux vs growing season correlation #####
+for (i in flux_loop) {
+  for (j in met_loop) { 
+    eval(parse(text = paste0(i, '_vs_' , j, '<- corr_an_GS %>% ggplot(aes_string(x = "', j,'", y = "',i,'")) + 
+    geom_point(size = 3) + 
+  geom_smooth(method = "lm", se = F, col = "black") +
+  ggtitle("annual flux vs GS variable") + 
+  geom_text(aes(label=year), size = 3, hjust=0.5, vjust=-0.8) +
+  labs(x = "', j,'", y = "',i,'",  col= "") +  
+  stat_cor(size = 3.5) +
+  theme_bw()+ 
+  theme(legend.position="none")')))
+    eval(parse(text = paste0("print(",i,"_vs_",j,")")))
+    eval(parse(text = paste0("ggsave('plots/corr_an_vs_GS_",i,"_vs_",j,".png')")))
+  }
+}
+
+###### annual flux vs non-growing season correlation #####
+for (i in flux_loop) {
+  for (j in met_loop) { 
+    eval(parse(text = paste0(i, '_vs_' , j, '<- corr_an_NGS %>% ggplot(aes_string(x = "', j,'", y = "',i,'")) + 
+    geom_point(size = 3) + 
+  geom_smooth(method = "lm", se = F, col = "black") +
+  ggtitle("annual flux vs NGS variable") + 
+  geom_text(aes(label=year), size = 3, hjust=0.5, vjust=-0.8) +
+  labs(x = "', j,'", y = "',i,'",  col= "") +  
+  stat_cor(size = 3.5) +
+  theme_bw()+ 
+  theme(legend.position="none")')))
+    eval(parse(text = paste0("print(",i,"_vs_",j,")")))
+    eval(parse(text = paste0("ggsave('plots/corr_an_vs_NGS_",i,"_vs_",j,".png')")))
+  }
+}
+
+
+####### correlation matrix ##########
+
+install.packages("corrplot")
+library(corrplot)
+
+source("http://www.sthda.com/upload/rquery_cormat.r")
+rquery.cormat(corr[, 2:21])
+
+
+
+
 grid.arrange(ncol = 3, 
              NEEgC_f_RF_vs_PARin, 
              NEEgC_f_RF_vs_Ta, 
@@ -1266,6 +1277,27 @@ grid.arrange(ncol = 3,
 
 ```
 
+```{r plot daily}
+
+daily.nGF <- left_join(daily.nGF, BB_met)
+daily.nGF <- daily.nGF %>% drop_na()
+
+daily.nGF %>% ggplot(aes(x = TS.5, y = ch4gC)) + 
+  geom_point() + 
+  geom_smooth(method = "loess", se = F)
+
+colnames(daily)
+colnames(BB_met)
+
+daily_met_flux <- left_join(daily, BB_met) 
+
+daily_met_flux %>% 
+  # filter(Precip >2) %>%
+  ggplot(aes(x = date, y = Ta)) + 
+  geom_point() + 
+  geom_smooth(method = "loess", se = F, span = 0.1)
+
+```
 
 ```{r compare two WTD types}
 
@@ -1451,6 +1483,9 @@ plot_daily(data = Marion,
            ma = 1
            )
 ```
+
+
+
 
 ```{r read remote sensing indices}
 
