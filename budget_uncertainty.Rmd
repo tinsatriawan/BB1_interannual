@@ -9,7 +9,8 @@ output:
     toc_collapsed: true
     toc_depth: 3
   theme: lumen
-
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
@@ -187,8 +188,6 @@ calculate_NGS <- function(input){
 
 ```
 
-
-
 ```{r wrangling for uncertainty analysis}
 
 ###### wrangling REddyProcOutput ######
@@ -205,7 +204,6 @@ REddyProcOutput <- REddyProcOutput %>%
 
 
 ```
-
 
 ```{r uncertainty analysis}
 
@@ -1317,7 +1315,6 @@ daily_unc <- data.frame(date = aggUnc_NEE_cumsum$date,
 write.csv(daily_unc, paste0(here::here(), "/df/daily_filled_NEE.csv"))
 
 ```
-
 
 ```{r C and GHG budget} 
 

@@ -256,7 +256,7 @@ daily.nGF <- daily.nGF %>%
   # filter(n > 48 * 0.6) %>%
   mutate(date = as.POSIXct(paste(year_local, jday, sep = "-"), format = "%Y-%j"))
 
-daily.nGF[which(daily.nGF$n > 48 * 0.6), 2:7] <- NA
+daily.nGF[which(daily.nGF$n < 48 * 0.3), 2:7] <- NA
 
   
 # daily.nGF$month_local <- as.factor(daily.nGF$month_local)
@@ -533,8 +533,6 @@ for(i in 1:nrow(met_monthly_anom)){
 
 ### soil temperature ###
 
-outliers <- boxplot(BB_met$TS.5, plot=FALSE)$out
-TS_no_out <- BB_met[-which(BB_met$TS.5 %in% outliers),]
 (TS <- TS_no_out %>% 
   # filter(date <= "2020-01-01") %>%
   ggplot() +
@@ -1083,6 +1081,39 @@ write.csv(met_season_sum, "met_season_summary.csv")
 
 ```
 
+```{r relative influence of GPP and Reco on NEE variability}
+# based on Schaefer et al. (1996)
+# f GPP = variance of GPP/(variance of GPP + variance of Reco)
+
+# for annual
+var_GPP <- var(flux_an_sum$GPPgC_f_RF)
+var_Reco <- var(flux_an_sum$RecogC)
+f_GPP <- var_GPP/(var_GPP + var_Reco)
+f_Reco <- var_Reco/(var_GPP + var_Reco)
+
+f_GPP; f_Reco
+
+
+# for growing season
+var_GPP_GS <- var(filter(flux_season_sum, season == "growing season")$GPPgC_f_RF)
+var_Reco_GS <- var(filter(flux_season_sum, season == "growing season")$RecogC)
+f_GPP_GS <- var_GPP_GS/(var_GPP_GS + var_Reco_GS)
+f_Reco_GS <- var_Reco_GS/(var_GPP_GS + var_Reco_GS)
+
+f_GPP_GS; f_Reco_GS
+
+
+# for non-growing season
+var_GPP_NGS <- var(filter(flux_season_sum, season == "non-growing season")$GPPgC_f_RF)
+var_Reco_NGS <- var(filter(flux_season_sum, season == "non-growing season")$RecogC)
+f_GPP_NGS <- var_GPP_NGS/(var_GPP_NGS + var_Reco_NGS)
+f_Reco_NGS <- var_Reco_NGS/(var_GPP_NGS + var_Reco_NGS)
+
+f_GPP_NGS; f_Reco_NGS
+
+```
+
+
 ```{r check annual pattern, message = F, warning = F}
 # plot_monthly <- function(main_data, mean_data){
 #   main_data%>%
@@ -1277,7 +1308,7 @@ grid.arrange(ncol = 3,
 
 ```
 
-```{r plot daily}
+```{r daily pattern}
 
 daily.nGF <- left_join(daily.nGF, BB_met)
 daily.nGF <- daily.nGF %>% drop_na()
@@ -1292,12 +1323,19 @@ colnames(BB_met)
 daily_met_flux <- left_join(daily, BB_met) 
 
 daily_met_flux %>% 
-  # filter(Precip >2) %>%
-  ggplot(aes(x = date, y = Ta)) + 
+  filter(TS.5 > 18) %>%
+  ggplot(aes(x = wtd, y = CH4gC_f_RF)) + 
   geom_point() + 
-  geom_smooth(method = "loess", se = F, span = 0.1)
+  geom_smooth(method = "loess", se = F, span = 1)
 
 ```
+
+```{r HOS approach}
+
+
+
+```
+
 
 ```{r compare two WTD types}
 
@@ -1435,6 +1473,63 @@ corr_NGS %>% ggplot(aes(x = wtd2, y = Precip)) +
 
 ```
 
+
+
+```{r read remote sensing indices}
+
+# read csv exported from GEE
+RS_indices <- read.csv("G:/My Drive/Burns_Bog/BB1_GEE_Indices.csv", header = T, skip = 1) %>% 
+  select(-1)
+
+# get date from landsat ID
+RS_indices$date <- RS_indices$id %>% 
+  substr(13, 20) %>%
+  as.POSIXct(format = "%Y%m%d")
+
+RS_indices_daily <- RS_indices %>%
+  filter(latitude >= 49.128682195765705 & latitude <= 49.13011436654678) %>%
+  filter(longitude >= -122.98623037567138 & longitude <= -122.98365545501709) %>%
+  ddply("date", summarize, 
+        MNDWI_SW1 = mean(MNDWI_SW1, na.rm = T), 
+        MNDWI_SW2 = mean(MNDWI_SW2, na.rm = T), 
+        NDVI = mean(NDVI, na.rm = T), 
+        NDWI = mean(NDWI, na.rm = T), 
+        NDWI_gao = mean(NDWI_gao, na.rm = T), 
+        LST = mean(CELSIUS, na.rm = T))
+
+daily_for_RS <- left_join(daily, BB_met) %>% 
+  select(date, NEE_f_RF, GPP_f_RF, Reco, CH4gC_f_RF, 
+         TS.5, TS.10, Precip, Ta, wtd,
+         period, season, year_local, month_local) %>%
+  mutate(
+  NEE_7 = rollmean(NEE_f_RF, 7, fill = NA), 
+  GPP_7 = rollmean(GPP_f_RF, 7, fill = NA), 
+  Reco_7 = rollmean(Reco, 7, fill = NA), 
+  CH4_7 = rollmean(CH4gC_f_RF, 7, fill = NA),
+  TS.5_7 = rollmean(TS.5, 7, fill = NA), 
+  Precip_7 = rollmean(Precip, 7, fill = NA), 
+  Ta_7 = rollmean(Ta, 7, fill = NA), 
+  wtd_7 = rollmean(wtd, 7, fill = NA))
+
+
+RS_indices <- left_join(RS_indices_daily, daily_for_RS) %>% drop_na()
+
+
+# calculate annual RS indices (mean, peak, median)
+RS_indices %>% 
+  plot_ly(x = ~date, y = ~NDVI, type = "scatter", mode= "lines", name = "NDVI") %>% 
+  add_trace(y =~NDWI_gao, type = "scatter", mode = "lines", name = "NDWI") %>% 
+  add_trace(y =~GPP_7, type = "scatter", mode = "lines", name = "GPP_7") %>% 
+  add_trace(y =~LST, type = "scatter", mode = "lines", name = "LST") %>% 
+  add_trace(y =~Ta_7, type = "scatter", mode = "lines", name = "Ta_7")
+
+
+RS_indices %>% 
+  plot_ly(x =~NDVI, y =~GPP_7, type = "scatter", mode = "markers")
+
+```
+
+
 ```{r, eval = F, include = F}
 # check with Nick 
 
@@ -1482,47 +1577,6 @@ plot_daily(data = Marion,
            label = expression("cumulative CH4 (gC "*m^{-2}~day^{-1}*")"), 
            ma = 1
            )
-```
-
-
-
-
-```{r read remote sensing indices}
-
-# read csv exported from GEE
-RS_indices <- read.csv("G:/My Drive/Burns_Bog/BB1_GEE_Indices.csv", header = T, skip = 1) %>% 
-  select(-1)
-
-# get date from landsat ID
-RS_indices$date <- RS_indices$id %>% 
-  substr(13, 20) %>%
-  as.POSIXct(format = "%Y%m%d")
-
-RS_indices <- left_join(daily, RS_indices)
-
-# add year, month, floor_date
-RS_indices <- RS_indices %>% 
-  mutate(year_local = year(date), 
-         month_local = month(date), 
-         floor_date = floor_date(date, "month")) 
-# add period
-y_2015_2016 <- RS_indices$date >= "2015-06-20" & RS_indices$date < "2016-06-20"
-y_2016_2017 <- RS_indices$date >= "2016-06-20" & RS_indices$date < "2017-06-20"
-y_2017_2018 <- RS_indices$date >= "2017-06-20" & RS_indices$date < "2018-06-20"
-y_2018_2019 <- RS_indices$date >= "2018-06-20" & RS_indices$date < "2019-06-20"
-y_2019_2020 <- RS_indices$date >= "2019-06-20" & RS_indices$date < "2020-06-20"
-y_2020_2021 <- RS_indices$date >= "2020-06-20" & RS_indices$date < "2021-06-20"
-
-RS_indices$period[y_2015_2016] <- "2015-2016"
-RS_indices$period[y_2016_2017] <- "2016-2017"
-RS_indices$period[y_2017_2018] <- "2017-2018"
-RS_indices$period[y_2018_2019] <- "2018-2019"
-RS_indices$period[y_2019_2020] <- "2019-2020"
-RS_indices$period[y_2020_2021] <- "2020-2021"
-
-# calculate annual RS indices (mean, peak, median)
-
-
 ```
 
 
