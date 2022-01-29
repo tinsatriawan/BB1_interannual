@@ -196,6 +196,8 @@ plot_monthly_anom <- function(main_data, anom_data){
 
 # function for setting year period
 set_period <- function(data) {
+  data$period <- NA 
+  
   y_2015_2016 <- data$date >= "2015-10-01" & data$date < "2016-10-01"
   y_2016_2017 <- data$date >= "2016-10-01" & data$date < "2017-10-01"
   y_2017_2018 <- data$date >= "2017-10-01" & data$date < "2018-10-01"
@@ -234,7 +236,7 @@ ch4_conv <- 12.01/(10^6)
 co2_conv <- 12.01/(10^6) 
 d.avg <- 1800 * 48  # 60s * 30min * 2 hours * 24 hours
 
-#TO FILTER NON GF DATA TO DAYS WHERE ONLY 60% OR MORE IS PRESENT
+#TO FILTER NON GF DATA TO DAYS WHERE ONLY 30% OR MORE IS PRESENT
 daily.nGF <- BB_flux %>%
   dplyr::select(c(year_local, jday, month_local, co2_flux, ch4_flux)) %>%
   drop_na()
@@ -448,21 +450,25 @@ BB_met <- BB1 %>%
          "TS.50" = "SOIL_TEMP_50CM") %>% 
   group_by(date) %>% 
   summarize(
-      TS.5 = mean(TS.5),  # soil temp
-      TS.10 = mean(TS.10),
-      TS.50 = mean(TS.50),
-      RH = mean(RH_2M),  # relative humidity
-      PARin = mean(INCOMING_PAR) * d.avg * 1e-6,  # mol m2 day -1 
-      SWin = mean(SHORTWAVE_IN),
-      VPD.y = mean(VPD.y),
-      VPD.x = mean(VPD.x),
-      Precip = sum(PRECIP),
-      PA_EC = mean(PA_EC2_AIR),  # barrometric pressure from EC
-      PA_2M = mean(PA_2M),  # barrometric pressure from met
-      Ta = mean(AIR_TEMP_2M),  # air temp at 2 m
+      TS.5 = mean(TS.5, na.rm = T),  # soil temp
+      TS.10 = mean(TS.10, na.rm = T),
+      TS.50 = mean(TS.50, na.rm = T),
+      RH = mean(RH_2M, na.rm = T),  # relative humidity
+      PARin = mean(INCOMING_PAR, na.rm = T) * d.avg * 1e-6,  # mol m2 day -1 
+      SWin = mean(SHORTWAVE_IN, na.rm = T),
+      VPD.y = mean(VPD.y, na.rm = T),
+      VPD.x = mean(VPD.x, na.rm = T),
+      Precip = sum(PRECIP, na.rm = T),
+      PA_EC = mean(PA_EC2_AIR, na.rm = T),  # barrometric pressure from EC
+      PA_2M = mean(PA_2M, na.rm = T),  # barrometric pressure from met
+      Ta = mean(AIR_TEMP_2M, na.rm = T),  # air temp at 2 m
       # WTH2 = mean(4.606 -(-0.89*WTH2+82)/100),  # water table height before 2018
-      wtd = mean(WTH_absolute),  # water Marion
-      SWC = mean(SVWC) # soil water content
+      wtd = mean(WTH_absolute, na.rm = T),  # water Marion
+      SWC = mean(SVWC, na.rm = T), # soil water content
+      LE = mean(LE, na.rm = T), 
+      H = mean(H, na.rm = T), 
+      br = mean(bowen_ratio, na.rm = T), 
+      ustar = mean(u., na.rm = T)
       ) %>%  
   mutate(month_local = month(date), 
          year_local = year(date), 
@@ -1330,7 +1336,156 @@ daily_met_flux %>%
 
 ```
 
-```{r HOS approach}
+```{r Stepwise linear regression }
+
+
+library(MASS)
+library(leaps)
+
+data_nGF <- left_join(daily.nGF, BB_met) %>% 
+  dplyr::select(c(co2gC, ch4gC, date, TS.5, RH, PARin, VPD.y, Precip, PA_2M, Ta, wtd, SWC, LE, H, ustar, br))%>% 
+  drop_na() 
+
+
+data_nGF1 <- data_nGF %>%
+  mutate(log_co2gC = log10(co2gC + 1 - min(co2gC)), 
+         exp_TS.5 = (exp(TS.5)^0.2), 
+         log_wtd = log10(wtd + 1 - min(wtd)), 
+         log_H = log10(H + 1 - min(H)), 
+         exp_H = exp(H), 
+         log_ustar = log(ustar), 
+         ln_SWC = log(SWC)) %>% 
+  dplyr::select(-c(ch4gC, date, co2gC)) 
+
+
+
+# # check data, transform if needed 
+pairs(~ log_co2gC + exp_TS.5 + log_wtd + H + log_ustar + ln_SWC,
+      data = data_nGF1,
+      main = "scatterplot matrix for mco2 ")
+
+# # TS.10 and SWin are removed due to multicollinearity. SWC is removed due to bad data
+# 
+
+# variable selection using AIC 
+model.null <- lm(log_co2gC ~ 1, data = data_nGF1) # no x variable, the null model
+model.full <- lm(log_co2gC ~ ., data = data_nGF1) # all x variables
+
+# Start with null model
+model.step <- stepAIC(model.null, 
+                      scope = list(upper = ~TS.5 + RH + PARin + 
+                                     VPD.y + Precip + PA_2M + Ta + wtd + SWC + 
+                                      LE + H + ustar + br, 
+                                   lower = ~1),
+                      trace = T)
+# start with full model 
+model.step <- stepAIC(model.full, 
+                      scope = list(upper = ~TS.5 + RH + PARin + 
+                                     VPD.y + Precip + PA_2M + Ta + wtd + SWC + 
+                                      LE + H + ustar + br, 
+                                   lower = ~1),
+                      trace = T)
+
+
+# get goodness of fit stats for multiple subsets 
+# nbest = 3 means that the three top with one x variable, two x variables, etc. 
+#
+co2gC_subset <- regsubsets(log_co2gC~., data = data_nGF1, nbest = 3)
+s <- summary(co2gC_subset)
+
+result_stat <- data.frame(s$which, s$rsq, s$adjr2, s$bic)
+
+# order results by decreasing adjr2
+result_stat[order(-result_stat$s.adjr2), ]
+
+# order results by increasing bic
+result_stat[order(result_stat$s.bic), ]
+
+
+
+
+# check assumption model 1
+
+model_1 <- lm(log_co2gC ~ TS.5+VPD.y+H+wtd + SWC, data = data_nGF1)
+sum_1 <- summary(model_1)
+
+data_nGF1$yhat.1 <- fitted(model_1)
+data_nGF1$resid.1 <- residuals(model_1)
+data_nGF1$stdresid.1 <- residuals(model_1)/sum_1$sigma
+
+# Diagnotic plots
+par(mfrow=c(2,2),cex=1.1,mai=c(1.1,1.1,0.5,0.4))
+# Fitted line plot. Predicted y versus observed y.
+plot(data_nGF1$yhat.1~data_nGF1$log_co2gC,xlab="Volume/ha",
+ylab="yhat",main="Predicted vs Actual Volume/ha",
+pch=19)
+abline(a=0,b=1,col="red")
+# Residual plot
+plot(data_nGF1$yhat.1, data_nGF1$resid.1,xlab = "yhat",
+ylab = "Residual",main = "Residual Plot",pch = 19)
+abline(h=0, col="red")
+# Normality plot
+qqnorm(data_nGF1$stdresid.1, ylab = "Std. Residual", pch =19)
+qqline(data_nGF1$stdresid.1, col ="red")
+# Histogram of residuals
+hist(data_nGF1$resid.1,breaks = 5,xlab = "Std. Residual",
+main = "Std. Residuals", col="grey", border="black")
+par(mfrow=c(1,1),cex=1.1,mai=c(1.1,1.1,1.0,1.0))
+
+
+#-----------model 2-----------#
+
+
+data_nGF2 <- data_nGF %>%
+  mutate(co2gC = exp(co2gC)^0.2,
+         exp_TS.5 = (exp(TS.5)^0.2), 
+         log_wtd = log10(wtd + 1 - min(wtd)), 
+         ln_SWC = log(SWC)) %>% 
+  dplyr::select(-c(ch4gC, date, SWC, wtd, TS.5)) 
+
+# model selection
+co2gC_subset <- regsubsets(co2gC~., data = data_nGF2, nbest = 3)
+s <- summary(co2gC_subset)
+
+result_stat <- data.frame(s$which, s$rsq, s$adjr2, s$bic)
+
+# order results by decreasing adjr2
+result_stat[order(-result_stat$s.adjr2), ]
+
+# order results by increasing bic
+result_stat[order(result_stat$s.bic), ]
+
+
+
+model_2 <- lm(co2gC ~ exp_TS.5+log_wtd+ln_SWC+H+ustar, data = data_nGF2)
+sum_2 <- summary(model_2)
+
+data_nGF2$yhat.2 <- fitted(model_2)
+data_nGF2$resid.2 <- residuals(model_2)
+data_nGF2$stdresid.2 <- residuals(model_2)/sum_2$sigma
+
+# Diagnotic plots
+par(mfrow=c(2,2),cex=1.1,mai=c(1.1,1.1,0.5,0.4))
+# Fitted line plot. Predicted y versus observed y.
+plot(data_nGF2$yhat.2~data_nGF2$co2gC,xlab="Volume/ha",
+ylab="yhat",main="Predicted vs Actual Volume/ha",
+pch=19)
+abline(a=0,b=1,col="red")
+# Residual plot
+plot(data_nGF2$yhat.2, data_nGF2$resid.2,xlab = "yhat",
+ylab = "Residual",main = "Residual Plot",pch = 19)
+abline(h=0, col="red")
+# Normality plot
+qqnorm(data_nGF2$stdresid.2, ylab = "Std. Residual", pch =19)
+qqline(data_nGF2$stdresid.2, col ="red")
+# Histogram of residuals
+hist(data_nGF1$resid.2,breaks = 5,xlab = "Std. Residual",
+main = "Std. Residuals", col="grey", border="black")
+par(mfrow=c(1,1),cex=1.1,mai=c(1.1,1.1,1.0,1.0))
+# shapiro-wilks for normality
+shapiro.test(data_nGF2$resid.2)
+
+
 
 
 
