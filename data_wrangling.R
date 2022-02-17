@@ -5,6 +5,8 @@
 # (3) Calculate daily met variables
 # to run the codes in another script, use "source('data_wrangling.R')"
 
+
+
 library(plyr)
 library(ggplot2)
 library(lubridate)
@@ -254,9 +256,9 @@ BB_met <- BB_met %>% set_period() %>% set_season(date = BB_met$date)
 
 
 
-#####------------------------- WEEKLY DATA NON-GAPFILLED--------------------------####
+#####------------------------- WEEKLY DATA --------------------------####
 
-##### Weekly nGF flux data #####
+##### daily non gapfilled flux data (averaged per week) #####
 
 weekly.nGF <- BB_flux %>%
   dplyr::select(c(year_local, jday, month_local, co2_flux, ch4_flux, date)) %>% 
@@ -271,8 +273,8 @@ weekly.nGF <- weekly.nGF %>%
   group_by(floor_date) %>% 
   summarize(co2 = mean(co2_flux, na.rm = T),
             ch4 = mean(ch4_flux, na.rm = T)) %>%
-  mutate(co2gC = co2 * d.avg * 7 * co2_conv) %>%
-  mutate(ch4gC = ch4* d.avg * 7 * co2_conv) %>%
+  mutate(co2gC = co2 * d.avg * co2_conv) %>%  # not multiplied by 7 because we want the unit to be /day
+  mutate(ch4gC = ch4* d.avg  * ch4_conv) %>%  # not multiplied by 7 because we want the unit to be /day
   ungroup()%>% 
   mutate(n = obs_count$n)
 
@@ -284,9 +286,26 @@ percent_week <- (weekly.nGF %>% drop_na() %>% tally()) / nrow(weekly.nGF) * 100
 print(paste("percent of weekly data points available in 6 years =", percent_week, "%"))
 
 
+#### daily gapfilled flux data (averaged per week) #####
+
+weekly.GF <- BB_flux %>%
+  dplyr::select(c(NEE_f_RF, Reco, FCH4_gf_RF, GPP_f_RF, date)) %>% 
+  mutate(floor_date = floor_date(date, "week", week_start =  getOption("lubridate.week.start", 4)))%>%
+  group_by(floor_date) %>% 
+  summarize(GPP_f_RF = mean(GPP_f_RF, na.rm = T), 
+            NEE_f_RF = mean(NEE_f_RF, na.rm = T), 
+            Reco = mean(Reco, na.rm = T), 
+            CH4_f_RF = mean(FCH4_gf_RF, na.rm = T))%>%
+  mutate(GPP_f_RF = GPP_f_RF * d.avg * co2_conv, 
+         NEE_f_RF = NEE_f_RF * d.avg * co2_conv, 
+         Reco = Reco * d.avg * co2_conv,
+         CH4_f_RF = CH4_f_RF * d.avg * ch4_conv) %>%  # not multiplied by 7 because we want the unit to be /day
+  ungroup()
+
+
 ##### weekly met data #####
 
-# DAILY MET DATA
+# DAILY MET DATA (averaged per week)
 weekly.met <- BB1 %>%  
   rename("TS.5" = "SOIL_TEMP_5CM", 
          "TS.10" = "SOIL_TEMP_10CM",

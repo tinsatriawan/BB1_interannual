@@ -13,6 +13,12 @@ knitr::opts_chunk$set(echo = FALSE)
 
 source("data_wrangling.R")
 
+library(phenofit)
+library(rootSolve)
+library(modelbased)
+
+
+
 ```
 
 
@@ -521,7 +527,7 @@ ggsave("plots/CH4_daily.png")
 
 ## Cumulative NEE, GPP, Reco 
 
-```{r}
+```{r plot cumulative fluxes}
 ## plot cumulative 
 
 fluxcum_labels <- c(
@@ -717,9 +723,11 @@ ggplotly(water)
 
 ```
 
-## Annual 
+# Annual 
 
-```{r, message = F, warning = F}
+
+## annual sums
+```{r annual sums & means, message = F, warning = F}
 
 day_count <- daily %>%
   drop_na(c(NEEgC_f_RF, RecogC, GPPgC_f_RF, CH4gC_f_RF)) %>%
@@ -837,6 +845,7 @@ write.csv(met_season_sum, "met_season_summary.csv")
 
 ```
 
+## influence of GPP and Re on NEE IAV
 ```{r relative influence of GPP and Reco on NEE variability}
 # based on Schaefer et al. (1996)
 # f GPP = variance of GPP/(variance of GPP + variance of Reco)
@@ -870,6 +879,264 @@ f_GPP_NGS; f_Reco_NGS
 ```
 
 
+## phenology indices 
+```{r phenology}
+date.origin <- as.Date("2000-01-01")
+
+GPP.use <- weekly.GF[!is.na(weekly.nGF$co2gC), ]
+
+# INPUT_GPP <- check_input(t = as.Date(weekly.GF$floor_date), 
+                     # y = (weekly.GF$GPP_f_RF))  # use this
+                     # y = weekly.nGF$co2gC + weekly.GF$Reco)
+                     
+INPUT_GPP <- check_input(t = as.Date(GPP.use$floor_date), 
+                         y = GPP.use$GPP_f_RF)
+
+INPUT_NEE <- check_input(t = as.Date(weekly.nGF$floor_date),
+                     y = -(weekly.nGF$co2gC) + 8)
+                     # y = -(weekly.GF$NEE_f_RF) + 8)
+
+INPUT_Reco <- check_input(t = as.Date(weekly.GF$floor_date),
+                     y = (weekly.GF$Reco))
+
+iters <- 2
+lambda <- 8
+wFUN <- wTSM
+r_max <- 0.2 
+r_min <- 0.0
+r_minPeakHeight <- 0.05
+calendarYear <- FALSE
+nptperyear <- 52
+
+
+
+calc_phenology <- function(INPUT, ...){
+  
+  # growing seasons division
+  brks2 <- season_mov(INPUT, 
+                    rFUN = "smooth_wWHIT",
+                    wFUN = wFUN,
+                    iters = iters, wmin = 0,
+                    IsOptim_lambda = F,
+                    lambda = lambda,
+                    nf = 3, frame = frame,
+                    maxExtendMonth = 12,
+                    r_max = r_max, r_min = r_min,
+                    r_minPeakHeight = r_minPeakHeight,
+                    calendarYear = calendarYear,
+                    IsPlot = FALSE, IsPlot.OnlyBad = FALSE,
+                    minpeakdistance = 1/3 * nptperyear, 
+                    MaxPeaksPerYear = 1,
+                    MaxTroughsPerYear = 4,
+                    ypeak_min = 0.08)
+  # curve fitting
+  fit <- curvefits(INPUT, brks2, 
+                 options = list(
+                 methods = c("AG", "Zhang", "Beck", "Elmore"), #,"klos",, 'Gu'
+                 wFUN = wBisquare,
+                 nextend = 2, 
+                 maxExtendMonth = 5, minExtendMonth = 1, 
+                 minPercValid = 0.2,
+                 print = FALSE,
+                 iters = 2,
+                 verbose = FALSE, ...))
+  d_fit <- get_fitting(fit)
+  d_gof <- get_GOF(fit)
+  TRS <- c(0, 0.1)  # set threshold
+  # extract transition dates
+  l_pheno <- get_pheno(fit, wFUN = wBisquare, TRS = TRS, IsPlot = F) 
+  pheno <- l_pheno$doy %>% melt_list("meth")
+  # list output
+  output <- list(brks2 = brks2, 
+                 d_fit = d_fit,
+                 fit = fit, 
+                 pheno = pheno)
+}
+
+####----------------- phenology extracted from GPP --------------####
+
+# extract phenology dates
+pheno_GPP <- calc_phenology(INPUT_GPP)
+
+# plot seasons
+plot_season(INPUT_GPP, pheno_GPP$brks2)
+
+# plot curve fitting
+p_GPP <- plot_curvefits(pheno_GPP$d_fit, pheno_GPP$brks2, title = NULL, cex = 1.5, ylab = "GPP", angle = 0)
+grid::grid.newpage()
+grid::grid.draw(p_GPP)
+
+# plot transition dates 
+get_pheno(pheno_GPP$fit,  method = "Zhang", wFUN = wBisquare, IsPlot = T)
+
+# get curvefit
+
+for(i in 1: length(pheno_GPP$fit)){
+  for(j in 1: length(pheno_GPP$fit[[i]]$model)){
+    GPP_model <- pheno_GPP$fit[[i]]$model[[j]]
+    GPP_fit <- NA
+    GPP_fit <- data.frame(flag = names(pheno_GPP$fit)[[i]],
+                          meth = names(pheno_GPP$fit[[i]]$model)[[j]],
+                          y = GPP_model$zs$iter2,
+                          t = as.Date(GPP_model$tout, origin = date.origin)
+                          )
+      if(j == 1) {
+        GPP_per_meth <- GPP_fit
+      } else{
+        GPP_per_meth <- rbind(GPP_per_meth, GPP_fit)} 
+      }
+  if(i == 1) {
+    GPP_fit_forplot <- GPP_per_meth
+  } else{
+    GPP_fit_forplot <- rbind(GPP_fit_forplot, GPP_per_meth)} 
+}
+
+####----------------- phenology extracted from NEE ---------------------####
+
+# extract phenology dates
+pheno_NEE <- calc_phenology(INPUT_NEE, use.rough = T)
+
+# plot seasons
+plot_season(INPUT_NEE, pheno_NEE$brks2)
+
+# plot curve fitting
+p_NEE <- plot_curvefits(pheno_NEE$d_fit, pheno_NEE$brks2, title = NULL, cex = 1.5, ylab = "NEE", angle = 0)
+grid::grid.newpage()
+grid::grid.draw(p_NEE)
+
+# plot transition dates 
+l_pheno <- get_pheno(pheno_NEE$fit, method = "Zhang", wFUN = wBisquare, IsPlot = T)
+
+
+
+
+for(i in 1: length(pheno_NEE$fit)){
+  for(j in 1: length(pheno_NEE$fit[[i]]$model)){
+    NEE_model <- pheno_NEE$fit[[i]]$model[[j]]
+    NEE_fit <- data.frame(flag = names(pheno_NEE$fit)[[i]],
+                          y = NEE_model$zs$iter2 - 8,
+                          t = as.Date(NEE_model$tout, origin = date.origin)
+                          )
+    NEE_fit <- data.frame(meth = as.factor(names(pheno_NEE$fit[[i]]$model)[[j]]), 
+                          flag = names(pheno_NEE$fit)[[i]],
+                          date.sos = ymd(NEE_fit$t[ceiling(zero_crossings(NEE_fit$y)[1])]), 
+                          date.eos = ymd(NEE_fit$t[ceiling(zero_crossings(NEE_fit$y)[2])]) 
+                          ) %>% 
+               mutate(origin = ymd(paste0(substr(flag, 1, 4), "-01-01")), 
+                     ZERO.sos = as.numeric(date.sos - origin), 
+                     ZERO.eos = as.numeric(date.eos - origin))
+      if(j == 1) {
+        NEE_per_meth <- NEE_fit
+      } else{
+        NEE_per_meth <- rbind(NEE_per_meth, NEE_fit)} 
+      }
+  if(i == 1) {
+    NEE_zero <- NEE_per_meth
+  } else{
+    NEE_zero <- rbind(NEE_zero, NEE_per_meth)} 
+}
+
+
+NEE_zero <- NEE_zero[order(NEE_zero$meth),]
+
+
+for(i in 1: length(pheno_NEE$fit)){
+  for(j in 1: length(pheno_NEE$fit[[i]]$model)){
+    NEE_model <- pheno_NEE$fit[[i]]$model[[j]]
+    NEE_fit <- NA
+    NEE_fit <- data.frame(flag = names(pheno_NEE$fit)[[i]],
+                          meth = names(pheno_NEE$fit[[i]]$model)[[j]],
+                          y = NEE_model$zs$iter2 - 8,
+                          t = as.Date(NEE_model$tout, origin = date.origin)
+                          )
+      if(j == 1) {
+        NEE_per_meth <- NEE_fit
+      } else{
+        NEE_per_meth <- rbind(NEE_per_meth, NEE_fit)} 
+      }
+  if(i == 1) {
+    NEE_fit_forplot <- NEE_per_meth
+  } else{
+    NEE_fit_forplot <- rbind(NEE_fit_forplot, NEE_per_meth)} 
+}
+
+
+
+####----------------- phenology extracted from Reco ---------------------####
+
+# extract phenology dates
+pheno_Reco <- calc_phenology(INPUT_Reco, use.rough = F)
+
+# plot seasons
+plot_season(INPUT_Reco, pheno_Reco$brks2)
+
+# plot curve fitting
+p_Reco <- plot_curvefits(pheno_Reco$d_fit, pheno_Reco$brks2, title = NULL, cex = 1.5, ylab = "Reco", angle = 0)
+grid::grid.newpage()
+grid::grid.draw(p_Reco)
+
+# plot transition dates 
+get_pheno(pheno_Reco$fit, method = "Zhang",  wFUN = wBisquare,  IsPlot = T)
+
+
+####-----------------  Extract transition dates ---------------####
+
+
+pheno_index <- data.frame(period = pheno_GPP$pheno$flag,
+                          method = pheno_GPP$pheno$meth,
+                          GPP_start_DER = pheno_GPP$pheno$DER.sos,  # start of growing season
+                          GPP_end_DER = pheno_GPP$pheno$DER.eos,  # end of growing season
+                          GPP_start_TRS = pheno_GPP$pheno$TRS1.sos, 
+                          GPP_end_TRS = pheno_GPP$pheno$TRS1.eos, 
+                          GPP_start_G = pheno_GPP$pheno$Greenup, 
+                          GPP_end_G = pheno_GPP$pheno$Dormancy, 
+                          GPP_maturity = pheno_GPP$pheno$Maturity, 
+                          GPP_senescence = pheno_GPP$pheno$Senescence,
+                          CUP_start = NEE_zero$ZERO.sos,  
+                          CUP_end = NEE_zero$ZERO.eos, 
+                          CUP_start_DER = pheno_NEE$pheno$DER.sos, 
+                          CUP_end_DER = pheno_NEE$pheno$DER.eos, 
+                          CUP_start_G = pheno_NEE$pheno$Greenup, 
+                          CUP_end_G = pheno_NEE$pheno$Dormancy, 
+                          CUP_start_TRS = pheno_NEE$pheno$TRS1.sos, 
+                          CUP_end_TRS = pheno_NEE$pheno$TRS1.eos,
+                          Reco_start = pheno_Reco$pheno$DER.sos, 
+                          Reco_end = pheno_Reco$pheno$DER.eos,
+                          NEE_peak = pheno_NEE$pheno$DER.pos) %>%
+  mutate(CUP = CUP_end - CUP_start, 
+         CUP_DER = CUP_end_DER - CUP_start_DER, 
+         CUP_TRS = CUP_end_TRS - CUP_start_TRS, 
+         CUP_G = CUP_end_G - CUP_start_G,
+         GSP_DER = GPP_end_DER - GPP_start_DER,
+         GSP_TRS = GPP_end_TRS - GPP_start_TRS,
+         GSP_G = GPP_end_G - GPP_start_G,
+         senescence_maturity = GPP_senescence - GPP_maturity,
+         summer_lag = CUP_start - GPP_start_TRS, 
+         autumn_lag = GPP_end_TRS - CUP_end, 
+         RGR = (Reco_end - Reco_start)/(GPP_end_TRS - GPP_start_TRS)
+         ) %>% 
+  filter(method == "Zhang") %>% 
+  mutate(period = c("2015-2016", "2016-2017", "2017-2018", "2018-2019", "2019-2020", "2020-2021"))
+
+
+NEE_fit_forplot <- NEE_fit_forplot %>% filter(meth == "Zhang")
+GPP_fit_forplot <- GPP_fit_forplot %>% filter(meth == "Zhang")
+
+plot_ly(data = weekly.nGF, x = ~floor_date, y = ~-co2gC, type = "scatter", mode = "markers", name = "NEE") %>% 
+  add_trace(data = weekly.GF, x = ~floor_date, y = ~GPP_f_RF, type = "scatter", mode = "markers", name = "GPP") %>% 
+  add_trace(data = weekly.GF, x = ~floor_date, y = ~Reco, type = "scatter", mode = "markers", name = "Reco") %>% 
+  add_trace(data = NEE_fit_forplot, x = ~t, y = ~y, type = "scatter", mode = "lines", name = "NEE_fit") %>% 
+  add_trace(data = GPP_fit_forplot, x = ~t, y = ~y, type = "scatter", mode = "lines", name = "GPP_fit")
+
+  
+
+
+
+
+
+```
+
+
 ## Check calculation
 
 ```{r check annual pattern, message = F, warning = F}
@@ -894,6 +1161,7 @@ f_GPP_NGS; f_Reco_NGS
 
 # correlation for annual values
 corr <- left_join(met_an_means, flux_an_sum) %>%
+  left_join(pheno_index) %>%
   mutate(year = substr(period, 1, 4))
 
 # correlation for growing & non-growing season
@@ -914,6 +1182,10 @@ corr_an_NGS <- left_join(flux_an_sum, filter(met_season_sum, season == "non-grow
 
 flux_loop <- c("NEEgC_f_RF", "RecogC", "GPPgC_f_RF", "CH4_gC_RF")
 met_loop <- c("TS.5", "Ta", "VPD", "wtd", "PARin", "Precip", "GPPgC_f_RF", "min_TS.5", "max_TS.5", "min_wtd", "max_wtd", "PA", "RH", "day_wtd", "day_wtd2", "day_precip")
+phen_loop <- c("CUP_start", 
+               "CUP", "CUP_DER", "CUP_TRS", "CUP_G",
+               "GSP_DER", "GSP_TRS", "GSP_G", "senescence_maturity",
+               "RGR", "summer_lag", "autumn_lag", "NEE_peak")
 
 
 ###### for annual correlation ########
@@ -944,6 +1216,22 @@ for (i in flux_loop) {
   theme(legend.position="none")')))
     eval(parse(text = paste0("print(",i,"_vs_",j,")")))
     eval(parse(text = paste0("ggsave('plots/corr_",i,"_vs_",j,".png')")))
+  }
+}
+
+## correlation for phenology 
+for (i in flux_loop) {
+  for (j in phen_loop) { 
+    eval(parse(text = paste0(i, '_vs_' , j, '<- corr %>% ggplot(aes_string(x = "', j,'", y = "',i,'")) + 
+    geom_point(size = 3) + 
+  geom_smooth(method = "lm", se = F, col = "black") +
+  geom_text(aes(label=year), size = 3, hjust=0.5, vjust=-0.8) +
+  labs(x = "', j,'", y = "',i,'",  col= "") +  
+  stat_cor(size = 3.5) +
+  theme_bw()+ 
+  theme(legend.position="none")')))
+    eval(parse(text = paste0("print(",i,"_vs_",j,")")))
+    eval(parse(text = paste0("ggsave('plots/corr_phen_",i,"_vs_",j,".png')")))
   }
 }
   
