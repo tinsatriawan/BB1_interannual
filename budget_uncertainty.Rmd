@@ -843,10 +843,10 @@ aggUnc_NEE_cumsum <- aggUnc_NEE_cumsum %>%
 
 NEE_cumsum_plot <- aggUnc_NEE_cumsum %>% 
   ggplot(aes(x = order, y = mean, color = factor(period), group = factor(period))) +
-    geom_line(size = 1) +
+    geom_line(size = 0.9) +
     geom_ribbon(aes(ymin = lower, ymax = upper, 
                     fill = period, linetype = NA), 
-              alpha=0.15) +
+              alpha=0.3) +
     scale_x_continuous(breaks = unique(x_break),
                        labels = unique(x_label)) +
     labs(x = "Month",  
@@ -930,10 +930,10 @@ x_label <- Reco_ustar_cumsum$day_label[!is.na(Reco_ustar_cumsum$day_label)][1:12
 
 Reco_cumsum_plot <- Reco_ustar_cumsum %>% 
   ggplot(aes(x = order, y = mean, color = factor(period), group = factor(period))) +
-    geom_line(size = 1) +
+    geom_line(size = 0.9) +
     geom_ribbon(aes(ymin = lower, ymax = upper, 
               linetype=NA, fill = period), 
-              alpha=0.15) +
+              alpha=0.3) +
     scale_x_continuous(breaks = unique(x_break),
                        labels = unique(x_label)) +
     labs(x = "Month", 
@@ -1169,10 +1169,10 @@ x_label <- GPP_ustar_cumsum$day_label[!is.na(GPP_ustar_cumsum$day_label)][1:12]
 
 GPP_cumsum_plot <- GPP_ustar_cumsum %>% 
   ggplot(aes(x = order, y = mean, color = factor(period), group = factor(period))) +
-    geom_line(size = 1) +
+    geom_line(size = 0.9) +
     geom_ribbon(aes(ymin = lower, ymax = upper, 
                     fill = period, linetype = NA), 
-              alpha=0.15) +
+              alpha=0.3) +
     scale_x_continuous(breaks = x_break,
                        labels = x_label) +
     labs(x = "Month", 
@@ -1261,10 +1261,10 @@ x_label <- FCH4_unc_cumsum$day_label[!is.na(FCH4_unc_cumsum$day_label)][1:12]
 
 FCH4_cumsum_plot <- FCH4_unc_cumsum %>% 
   ggplot(aes(x = order, y = mean, color = factor(period), group = factor(period))) +
-    geom_line(size = 1) +
+    geom_line(size = 0.9) +
     geom_ribbon(aes(ymin = lower, ymax = upper, 
                     linetype = NA, fill = period), 
-              alpha=0.1) +
+              alpha=0.3) +
     scale_x_continuous(breaks = unique(x_break),
                        labels = unique(x_label)) +
     labs(x = "Month", 

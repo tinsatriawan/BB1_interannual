@@ -72,8 +72,11 @@ set_season <- function(input, date_vector){
 # define directory
 
 dir_rf <- "G:\\.shortcut-targets-by-id\\1txCh9lZ7VGCujXGvBaJCMVnuxT-65q4K\\Micromet Lab\\Projects\\2014-Burns Bog\\Flux-tower\\flux_data\\for_uncertainty\\RF_results"
-
 dir_unc <- "G:\\.shortcut-targets-by-id\\1txCh9lZ7VGCujXGvBaJCMVnuxT-65q4K\\Micromet Lab\\Projects\\2014-Burns Bog\\Flux-tower\\flux_data\\for_uncertainty"
+
+# dir_rf <- "G:\\.shortcut-targets-by-id\\1txCh9lZ7VGCujXGvBaJCMVnuxT-65q4K\\Micromet Lab\\People\\2020-Tin Satriawan\\for_uncertainty\\RF_results"
+# dir_unc <- "G:\\.shortcut-targets-by-id\\1txCh9lZ7VGCujXGvBaJCMVnuxT-65q4K\\Micromet Lab\\People\\2020-Tin Satriawan\\for_uncertainty"
+
 
 
 
@@ -261,7 +264,13 @@ BB_met <- BB_met %>% set_period() %>% set_season(date = BB_met$date)
 ##### daily non gapfilled flux data (averaged per week) #####
 
 weekly.nGF <- BB_flux %>%
-  dplyr::select(c(year_local, jday, month_local, co2_flux, ch4_flux, date)) %>% 
+  dplyr::select(c(year_local, jday, month_local, co2_flux, ch4_flux, Reco, GPP_f_RF, date))
+# 
+# weekly.nGF[is.na(weekly.nGF$co2_flux) , "Reco"] <- NA
+# weekly.nGF[is.na(weekly.nGF$co2_flux) , "GPP_f_RF"] <- NA
+
+
+weekly.nGF <- weekly.nGF  %>% 
   mutate(floor_date = floor_date(date, "week", week_start =  getOption("lubridate.week.start", 4)))  ## week
 
 obs_count <- weekly.nGF %>%
@@ -272,14 +281,18 @@ obs_count <- weekly.nGF %>%
 weekly.nGF <- weekly.nGF %>%
   group_by(floor_date) %>% 
   summarize(co2 = mean(co2_flux, na.rm = T),
-            ch4 = mean(ch4_flux, na.rm = T)) %>%
-  mutate(co2gC = co2 * d.avg * co2_conv) %>%  # not multiplied by 7 because we want the unit to be /day
-  mutate(ch4gC = ch4* d.avg  * ch4_conv) %>%  # not multiplied by 7 because we want the unit to be /day
+            ch4 = mean(ch4_flux, na.rm = T),
+            GPP_f_RF = mean(GPP_f_RF, na.rm = T), 
+            Reco = mean(Reco, na.rm = T)) %>%
+  mutate(co2gC = co2 * d.avg * co2_conv, 
+         ch4gC = ch4 * d.avg  * ch4_conv,
+         GPP_f_RF = GPP_f_RF * d.avg * co2_conv, 
+         Reco = Reco * d.avg * co2_conv) %>%  # not multiplied by 7 because we want the unit to be /day
   ungroup()%>% 
   mutate(n = obs_count$n)
 
 # filter non gap-filled data to get >30% of half-hourly measurements
-weekly.nGF[which(weekly.nGF$n < 48 * 7 * 0.3), 2:5] <- NA
+weekly.nGF[which(weekly.nGF$n < 48 * 7 * 0.3), 2:ncol(weekly.nGF)] <- NA
 
 percent_week <- (weekly.nGF %>% drop_na() %>% tally()) / nrow(weekly.nGF) * 100
 

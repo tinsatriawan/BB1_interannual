@@ -138,8 +138,8 @@ monthly_means <- monthly %>%
 #### calculate monthly anomalies #####
 monthly_anom <- monthly
 for(i in 1:nrow(monthly)){ 
-  monthly_anom[i, c(3:8)] <- monthly_anom[i, c(3:8)] -  
-    monthly_means[monthly$month_local[i], c(2:7)]
+  monthly_anom[i, c(3:9)] <- monthly_anom[i, c(3:9)] -  
+    monthly_means[which(monthly_means$month_local == monthly_anom$month_local[i]), c(2:8)]
 }
 
 ```
@@ -719,7 +719,7 @@ ggsave("plots/vpd.png")
 print(precip)
 ggsave("plots/precip.png")
 
-ggplotly(water)
+# ggplotly(water)
 
 ```
 
@@ -766,6 +766,8 @@ met_an_means <- BB_met %>%
   group_by(period) %>%
   summarise(min_TS.5 = min(TS.5, na.rm = T), 
       max_TS.5 = max(TS.5, na.rm = T),
+      min_Ta = min(Ta, na.rm = T), 
+      max_Ta = max(Ta, na.rm = T),
       min_wtd = min(wtd, na.rm = T), 
       max_wtd = max(wtd, na.rm = T), 
       day_wtd = count(wtd > 0, na.rm = T), 
@@ -790,6 +792,8 @@ met_season_sum <- BB_met %>%
   group_by(period, season) %>%
   summarise(min_TS.5 = min(TS.5, na.rm = T), 
       max_TS.5 = max(TS.5, na.rm = T),
+      min_Ta = min(Ta, na.rm = T), 
+      max_Ta = max(Ta, na.rm = T),
       min_wtd = min(wtd, na.rm = T), 
       max_wtd = max(wtd, na.rm = T),
       day_wtd = count(wtd > 0, na.rm = T), 
@@ -837,11 +841,10 @@ met_season_sum <- BB_met %>%
 # kable_styling()
 
 
-write.csv(flux_an_sum, "flux_annual_summary.csv")
-write.csv(flux_season_sum, "flux_season_summary.csv")
-# write.csv(met_an_sum, "met_annual_summary.csv")
-write.csv(met_an_means, "met_annual_summary.csv")
-write.csv(met_season_sum, "met_season_summary.csv")
+write.csv(flux_an_sum, "df/flux_annual_summary.csv")
+write.csv(flux_season_sum, "df/flux_season_summary.csv")
+write.csv(met_an_means, "df/met_annual_summary.csv")
+write.csv(met_season_sum, "df/met_season_summary.csv")
 
 ```
 
@@ -883,14 +886,15 @@ f_GPP_NGS; f_Reco_NGS
 ```{r phenology}
 date.origin <- as.Date("2000-01-01")
 
-GPP.use <- weekly.GF[!is.na(weekly.nGF$co2gC), ]
+# GPP.use <- weekly.GF[!is.na(weekly.nGF$co2gC), ]
+# INPUT_GPP <- check_input(t = as.Date(GPP.use$floor_date), 
+#                          y = GPP.use$GPP_f_RF)
 
-# INPUT_GPP <- check_input(t = as.Date(weekly.GF$floor_date), 
-                     # y = (weekly.GF$GPP_f_RF))  # use this
+INPUT_GPP <- check_input(t = as.Date(weekly.nGF$floor_date),
+                     y = (weekly.nGF$GPP_f_RF))  # use this
                      # y = weekly.nGF$co2gC + weekly.GF$Reco)
                      
-INPUT_GPP <- check_input(t = as.Date(GPP.use$floor_date), 
-                         y = GPP.use$GPP_f_RF)
+
 
 INPUT_NEE <- check_input(t = as.Date(weekly.nGF$floor_date),
                      y = -(weekly.nGF$co2gC) + 8)
@@ -899,18 +903,21 @@ INPUT_NEE <- check_input(t = as.Date(weekly.nGF$floor_date),
 INPUT_Reco <- check_input(t = as.Date(weekly.GF$floor_date),
                      y = (weekly.GF$Reco))
 
-iters <- 2
-lambda <- 8
-wFUN <- wTSM
-r_max <- 0.2 
-r_min <- 0.0
-r_minPeakHeight <- 0.05
-calendarYear <- FALSE
-nptperyear <- 52
+
 
 
 
 calc_phenology <- function(INPUT, ...){
+  
+  # parameters 
+  iters <- 2
+  lambda <- 8
+  wFUN <- wBisquare
+  r_max <- 0.2 
+  r_min <- 0.0
+  r_minPeakHeight <- 0.05
+  calendarYear <- FALSE
+  nptperyear <- 52
   
   # growing seasons division
   brks2 <- season_mov(INPUT, 
@@ -942,7 +949,7 @@ calc_phenology <- function(INPUT, ...){
                  verbose = FALSE, ...))
   d_fit <- get_fitting(fit)
   d_gof <- get_GOF(fit)
-  TRS <- c(0, 0.1)  # set threshold
+  TRS <- c(0, 0.1, 0.2)  # set threshold
   # extract transition dates
   l_pheno <- get_pheno(fit, wFUN = wBisquare, TRS = TRS, IsPlot = F) 
   pheno <- l_pheno$doy %>% melt_list("meth")
@@ -956,7 +963,7 @@ calc_phenology <- function(INPUT, ...){
 ####----------------- phenology extracted from GPP --------------####
 
 # extract phenology dates
-pheno_GPP <- calc_phenology(INPUT_GPP)
+pheno_GPP <- calc_phenology(INPUT_GPP, use.rough = T)
 
 # plot seasons
 plot_season(INPUT_GPP, pheno_GPP$brks2)
@@ -967,7 +974,7 @@ grid::grid.newpage()
 grid::grid.draw(p_GPP)
 
 # plot transition dates 
-get_pheno(pheno_GPP$fit,  method = "Zhang", wFUN = wBisquare, IsPlot = T)
+get_pheno(pheno_GPP$fit,  method = "AG", wFUN = wBisquare, IsPlot = T)
 
 # get curvefit
 
@@ -1005,7 +1012,7 @@ grid::grid.newpage()
 grid::grid.draw(p_NEE)
 
 # plot transition dates 
-l_pheno <- get_pheno(pheno_NEE$fit, method = "Zhang", wFUN = wBisquare, IsPlot = T)
+l_pheno <- get_pheno(pheno_NEE$fit, method = "AG", wFUN = wBisquare, IsPlot = T)
 
 
 
@@ -1065,7 +1072,7 @@ for(i in 1: length(pheno_NEE$fit)){
 ####----------------- phenology extracted from Reco ---------------------####
 
 # extract phenology dates
-pheno_Reco <- calc_phenology(INPUT_Reco, use.rough = F)
+pheno_Reco <- calc_phenology(INPUT_Reco, use.rough = T)
 
 # plot seasons
 plot_season(INPUT_Reco, pheno_Reco$brks2)
@@ -1100,8 +1107,8 @@ pheno_index <- data.frame(period = pheno_GPP$pheno$flag,
                           CUP_end_G = pheno_NEE$pheno$Dormancy, 
                           CUP_start_TRS = pheno_NEE$pheno$TRS1.sos, 
                           CUP_end_TRS = pheno_NEE$pheno$TRS1.eos,
-                          Reco_start = pheno_Reco$pheno$DER.sos, 
-                          Reco_end = pheno_Reco$pheno$DER.eos,
+                          Reco_start = pheno_Reco$pheno$TRS1.sos, 
+                          Reco_end = pheno_Reco$pheno$TRS1.eos,
                           NEE_peak = pheno_NEE$pheno$DER.pos) %>%
   mutate(CUP = CUP_end - CUP_start, 
          CUP_DER = CUP_end_DER - CUP_start_DER, 
@@ -1115,31 +1122,31 @@ pheno_index <- data.frame(period = pheno_GPP$pheno$flag,
          autumn_lag = GPP_end_TRS - CUP_end, 
          RGR = (Reco_end - Reco_start)/(GPP_end_TRS - GPP_start_TRS)
          ) %>% 
-  filter(method == "Zhang") %>% 
+  filter(method == "AG") %>%
   mutate(period = c("2015-2016", "2016-2017", "2017-2018", "2018-2019", "2019-2020", "2020-2021"))
 
 
-NEE_fit_forplot <- NEE_fit_forplot %>% filter(meth == "Zhang")
-GPP_fit_forplot <- GPP_fit_forplot %>% filter(meth == "Zhang")
+NEE_fit_forplot <- NEE_fit_forplot %>% filter(meth == "AG")
+GPP_fit_forplot <- GPP_fit_forplot %>% filter(meth == "AG")
 
 plot_ly(data = weekly.nGF, x = ~floor_date, y = ~-co2gC, type = "scatter", mode = "markers", name = "NEE") %>% 
-  add_trace(data = weekly.GF, x = ~floor_date, y = ~GPP_f_RF, type = "scatter", mode = "markers", name = "GPP") %>% 
-  add_trace(data = weekly.GF, x = ~floor_date, y = ~Reco, type = "scatter", mode = "markers", name = "Reco") %>% 
+  add_trace(data = weekly.nGF, x = ~floor_date, y = ~GPP_f_RF, type = "scatter", mode = "markers", name = "GPP") %>% 
+  add_trace(data = weekly.nGF, x = ~floor_date, y = ~Reco, type = "scatter", mode = "markers", name = "Reco") %>% 
   add_trace(data = NEE_fit_forplot, x = ~t, y = ~y, type = "scatter", mode = "lines", name = "NEE_fit") %>% 
   add_trace(data = GPP_fit_forplot, x = ~t, y = ~y, type = "scatter", mode = "lines", name = "GPP_fit")
 
   
 
-
+write.csv(pheno_index, "df/pheno_index")
 
 
 
 ```
 
 
-## Check calculation
+## Correlation
 
-```{r check annual pattern, message = F, warning = F}
+```{r Correlation, message = F, warning = F}
 # plot_monthly <- function(main_data, mean_data){
 #   main_data%>%
 #   ggplot() +
@@ -1171,19 +1178,25 @@ corr_GS <- left_join(filter(flux_season_sum, season == "growing season"), filter
 corr_NGS <- left_join(filter(flux_season_sum, season == "non-growing season"), filter(met_season_sum, season == "non-growing season"))%>%
   mutate(year = substr(period, 1, 4))
 
-corr_an_GS <- left_join(flux_an_sum, filter(met_season_sum, season == "growing season"))%>%
+corr_an_GS <- left_join(flux_an_sum, filter(met_season_sum, season == "growing season")) %>%
   mutate(year = substr(period, 1, 4))
 
 corr_an_NGS <- left_join(flux_an_sum, filter(met_season_sum, season == "non-growing season"))%>%
   mutate(year = substr(period, 1, 4))
 
 
+# need to add
+corr_NGS_pheno <- left_join(pheno_index, filter(flux_season_sum, season == "non-growing season"))%>%
+  mutate(year = substr(period, 1, 4))
+corr_GS_pheno <- left_join(pheno_index, filter(flux_season_sum, season == "growing season"))%>%
+  mutate(year = substr(period, 1, 4))
 
 
 flux_loop <- c("NEEgC_f_RF", "RecogC", "GPPgC_f_RF", "CH4_gC_RF")
-met_loop <- c("TS.5", "Ta", "VPD", "wtd", "PARin", "Precip", "GPPgC_f_RF", "min_TS.5", "max_TS.5", "min_wtd", "max_wtd", "PA", "RH", "day_wtd", "day_wtd2", "day_precip")
-phen_loop <- c("CUP_start", 
-               "CUP", "CUP_DER", "CUP_TRS", "CUP_G",
+met_loop <- c("TS.5", "Ta", "VPD", "wtd", "PARin", "Precip", "GPPgC_f_RF", "min_TS.5", "max_TS.5", "min_Ta", "max_Ta", "min_wtd", "max_wtd", "PA", "RH", "day_wtd", "day_wtd2", "day_precip")
+phen_loop <- c("CUP_start",
+               "CUP", 
+               # "CUP_DER", "CUP_TRS", "CUP_G",
                "GSP_DER", "GSP_TRS", "GSP_G", "senescence_maturity",
                "RGR", "summer_lag", "autumn_lag", "NEE_peak")
 
@@ -1274,6 +1287,8 @@ for (i in flux_loop) {
 }
 
 ###### annual flux vs growing season correlation #####
+
+## for met variables
 for (i in flux_loop) {
   for (j in met_loop) { 
     eval(parse(text = paste0(i, '_vs_' , j, '<- corr_an_GS %>% ggplot(aes_string(x = "', j,'", y = "',i,'")) + 
@@ -1290,7 +1305,25 @@ for (i in flux_loop) {
   }
 }
 
+## for phenology 
+for (i in flux_loop) {
+  for (j in phen_loop) { 
+    eval(parse(text = paste0(i, '_vs_' , j, '<- corr_GS_pheno %>% ggplot(aes_string(x = "', j,'", y = "',i,'")) + 
+    geom_point(size = 3) + 
+  geom_smooth(method = "lm", se = F, col = "black") +
+  ggtitle("GS flux vs annual PI") + 
+  geom_text(aes(label=year), size = 3, hjust=0.5, vjust=-0.8) +
+  labs(x = "', j,'", y = "',i,'",  col= "") +  
+  stat_cor(size = 3.5) +
+  theme_bw()+ 
+  theme(legend.position="none")')))
+    eval(parse(text = paste0("print(",i,"_vs_",j,")")))
+    eval(parse(text = paste0("ggsave('plots/corr_phen_vs_GS",i,"_vs_",j,".png')")))
+  }
+}
+
 ###### annual flux vs non-growing season correlation #####
+## for met variables
 for (i in flux_loop) {
   for (j in met_loop) { 
     eval(parse(text = paste0(i, '_vs_' , j, '<- corr_an_NGS %>% ggplot(aes_string(x = "', j,'", y = "',i,'")) + 
@@ -1307,49 +1340,66 @@ for (i in flux_loop) {
   }
 }
 
+## for phenology 
+for (i in flux_loop) {
+  for (j in phen_loop) { 
+    eval(parse(text = paste0(i, '_vs_' , j, '<- corr_NGS_pheno %>% ggplot(aes_string(x = "', j,'", y = "',i,'")) + 
+    geom_point(size = 3) + 
+  geom_smooth(method = "lm", se = F, col = "black") +
+  ggtitle("NGS flux vs annual PI") + 
+  geom_text(aes(label=year), size = 3, hjust=0.5, vjust=-0.8) +
+  labs(x = "', j,'", y = "',i,'",  col= "") +  
+  stat_cor(size = 3.5) +
+  theme_bw()+ 
+  theme(legend.position="none")')))
+    eval(parse(text = paste0("print(",i,"_vs_",j,")")))
+    eval(parse(text = paste0("ggsave('plots/corr_phen_vs_NGS",i,"_vs_",j,".png')")))
+  }
+}
+
 
 ####### correlation matrix ##########
 
-install.packages("corrplot")
-library(corrplot)
-
-source("http://www.sthda.com/upload/rquery_cormat.r")
-rquery.cormat(corr[, 2:21])
-
-
-
-
-grid.arrange(ncol = 3, 
-             NEEgC_f_RF_vs_PARin, 
-             NEEgC_f_RF_vs_Ta, 
-             NEEgC_f_RF_vs_TS.5, 
-             NEEgC_f_RF_vs_VPD, 
-             NEEgC_f_RF_vs_wtd, 
-             NEEgC_f_RF_vs_Precip)
-
-grid.arrange(ncol = 3, 
-             RecogC_vs_PARin, 
-             RecogC_vs_Ta, 
-             RecogC_vs_TS.5, 
-             RecogC_vs_VPD, 
-             RecogC_vs_wtd, 
-             RecogC_vs_Precip)
-
-grid.arrange(ncol = 3, 
-             GPPgC_f_RF_vs_PARin, 
-             GPPgC_f_RF_vs_Ta, 
-             GPPgC_f_RF_vs_TS.5, 
-             GPPgC_f_RF_vs_VPD, 
-             GPPgC_f_RF_vs_wtd, 
-             GPPgC_f_RF_vs_Precip)
-
-grid.arrange(ncol = 3, 
-             CH4_gC_RF_vs_PARin, 
-             CH4_gC_RF_vs_Ta, 
-             CH4_gC_RF_vs_TS.5, 
-             CH4_gC_RF_vs_VPD, 
-             CH4_gC_RF_vs_wtd, 
-             CH4_gC_RF_vs_Precip)
+# install.packages("corrplot")
+# library(corrplot)
+# 
+# source("http://www.sthda.com/upload/rquery_cormat.r")
+# rquery.cormat(corr[, 2:21])
+# 
+# 
+# 
+# 
+# grid.arrange(ncol = 3, 
+#              NEEgC_f_RF_vs_PARin, 
+#              NEEgC_f_RF_vs_Ta, 
+#              NEEgC_f_RF_vs_TS.5, 
+#              NEEgC_f_RF_vs_VPD, 
+#              NEEgC_f_RF_vs_wtd, 
+#              NEEgC_f_RF_vs_Precip)
+# 
+# grid.arrange(ncol = 3, 
+#              RecogC_vs_PARin, 
+#              RecogC_vs_Ta, 
+#              RecogC_vs_TS.5, 
+#              RecogC_vs_VPD, 
+#              RecogC_vs_wtd, 
+#              RecogC_vs_Precip)
+# 
+# grid.arrange(ncol = 3, 
+#              GPPgC_f_RF_vs_PARin, 
+#              GPPgC_f_RF_vs_Ta, 
+#              GPPgC_f_RF_vs_TS.5, 
+#              GPPgC_f_RF_vs_VPD, 
+#              GPPgC_f_RF_vs_wtd, 
+#              GPPgC_f_RF_vs_Precip)
+# 
+# grid.arrange(ncol = 3, 
+#              CH4_gC_RF_vs_PARin, 
+#              CH4_gC_RF_vs_Ta, 
+#              CH4_gC_RF_vs_TS.5, 
+#              CH4_gC_RF_vs_VPD, 
+#              CH4_gC_RF_vs_wtd, 
+#              CH4_gC_RF_vs_Precip)
 
 
 ```
