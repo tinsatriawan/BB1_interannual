@@ -92,6 +92,8 @@ plot_monthly_anom <- function(main_data, anom_data){
           strip.placement = "outside") 
 }
 
+month.abb.level <- c("Oct","Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep")
+
 ```
 
 
@@ -134,6 +136,15 @@ monthly_means <- monthly %>%
        CH4gC_f = mean(CH4gC_f, na.rm = T),
        CH4gC_f_RF = mean(CH4gC_f_RF, na.rm = T))
 
+monthly_sd <- monthly %>% 
+  ddply("month_local", summarize, 
+       NEEgC_f = sd(NEEgC_f, na.rm = T),
+       NEEgC_f_RF = sd(NEEgC_f_RF, na.rm = T), 
+       GPPgC_f = sd(GPPgC_f, na.rm = T),
+       GPPgC_f_RF = sd(GPPgC_f_RF, na.rm = T), 
+       RecogC = sd(RecogC, na.rm = T),
+       CH4gC_f = sd(CH4gC_f, na.rm = T),
+       CH4gC_f_RF = sd(CH4gC_f_RF, na.rm = T))
 
 #### calculate monthly anomalies #####
 monthly_anom <- monthly
@@ -241,6 +252,10 @@ ggplotly(GPP_comparison)
   
 met_monthly <- BB_met %>% 
   ddply("floor_date", summarize, 
+      min_TS.5 = min(TS.5, na.rm = T), 
+      max_TS.5 = max(TS.5, na.rm = T),
+      min_wtd = min(wtd, na.rm = T), 
+      max_wtd = max(wtd, na.rm = T), 
       # length = length(TS.5),
       TS.5 = mean(TS.5, na.rm = T),  # soil temp
       TS.10 = mean(TS.10, na.rm = T),
@@ -253,15 +268,16 @@ met_monthly <- BB_met %>%
       PA_2M = mean(PA_2M, na.rm = T),  # barrometric pressure from met
       Ta = mean(Ta, na.rm = T),  # air temp at 2 m
       SWC = mean(SWC, na.rm = T), 
-      wtd = mean(wtd, na.rm = T), 
+      wtd = mean(wtd, na.rm = T)) %>%
+  mutate(month_local = month(floor_date))
+
+# calculate monthly means (averaged across all years) met variables
+met_monthly_means <- met_monthly %>% 
+  ddply("month_local", summarize, 
       min_TS.5 = min(TS.5, na.rm = T), 
       max_TS.5 = max(TS.5, na.rm = T),
       min_wtd = min(wtd, na.rm = T), 
-      max_wtd = max(wtd, na.rm = T)) %>%
-  mutate(month_local = month(floor_date))
-
-met_monthly_means <- met_monthly %>% 
-  ddply("month_local", summarize, 
+      max_wtd = max(wtd, na.rm = T), 
       TS.5 = mean(TS.5, na.rm = T),  # soil temp
       TS.10 = mean(TS.10, na.rm = T),
       TS.50 = mean(TS.50, na.rm = T),
@@ -273,11 +289,23 @@ met_monthly_means <- met_monthly %>%
       PA_2M = mean(PA_2M, na.rm = T),  # barrometric pressure from met
       Ta = mean(Ta, na.rm = T),  # air temp at 2 m
       SWC = mean(SWC, na.rm = T), 
-      wtd = mean(wtd, na.rm = T), 
-      min_TS.5 = min(TS.5, na.rm = T), 
-      max_TS.5 = max(TS.5, na.rm = T),
-      min_wtd = min(wtd, na.rm = T), 
-      max_wtd = max(wtd, na.rm = T))
+      wtd = mean(wtd, na.rm = T))
+
+# calculate stdev (across all years) for monthly met variables
+met_monthly_sd <- met_monthly %>% 
+  ddply("month_local", summarize, 
+      TS.5 = sd(TS.5, na.rm = T),  # soil temp
+      TS.10 = sd(TS.10, na.rm = T),
+      TS.50 = sd(TS.50, na.rm = T),
+      RH = sd(RH, na.rm = T),  # relative humidity
+      PARin = sd(PARin, na.rm = T),  
+      SWin = sd(SWin, na.rm = T),
+      VPD.y = sd(VPD.y, na.rm = T),
+      Precip = sd(Precip, na.rm = T),
+      PA_2M = sd(PA_2M, na.rm = T),  # barrometric pressure from met
+      Ta = sd(Ta, na.rm = T),  # air temp at 2 m
+      SWC = sd(SWC, na.rm = T), 
+      wtd = sd(wtd, na.rm = T))
 
 
 #### calculate monthly anomalies for met variables ####
@@ -289,15 +317,15 @@ met_monthly_anom <- met_monthly
 #   }
 for(i in 1:nrow(met_monthly_anom)){
   index <- which(met_monthly_means$month_local == met_monthly_anom$month_local[i])
-  met_monthly_anom[i, c(2:13)] <- met_monthly_anom[i, c(2:13)] -
-    met_monthly_means[index, c(2:13)]
+  met_monthly_anom[i, c(2:17)] <- met_monthly_anom[i,  c(2:17)] -
+    met_monthly_means[index, c(2:17)]
   # print(i)
   }
 
 
 ```
 
-```{r plotting met variables, message = F, warning = F}
+```{r plotting daily met variables, message = F, warning = F}
 
 ### soil temperature ###
 
@@ -324,7 +352,7 @@ for(i in 1:nrow(met_monthly_anom)){
 ### barrometric pressure ###
 (PA <- plot_daily(data = BB_met, 
                   variable = PA_2M, 
-                  label = "Barrometric pressure (%)", 
+                  label = "Barrometric pressure (kPa)", 
                   ma = 1)) 
 (SWC <- plot_daily(data = BB_met, 
                   variable = SWC, 
@@ -356,12 +384,11 @@ for(i in 1:nrow(met_monthly_anom)){
 
 
 
-
 # Monthly
 
 ## Monthly $CO_2$ & $CH_4$ fluxes
 
-```{r plot monthly fluxes, fig.height = 8, fig.width = 8, message = F, warning = F}
+```{r plot daily fluxes and monthly anomalies, fig.height = 8, fig.width = 8, message = F, warning = F}
 
 flux_labels <- c(
   'NEE (gC m-2 month-1)',
@@ -525,6 +552,50 @@ print(CH4)
 ggsave("plots/CH4_daily.png")
 ```
 
+```{r plot monthly flux boxplot, message = F, warning = F}
+
+### NEE ###
+jpeg("plots/monthly_NEE.jpg", width = 900, height = 350, units = "px", quality = 120)
+boxplot(NEEgC_f_RF~factor(month.abb[month_local], levels = month.abb.level),
+        data=daily,
+        xlab="Month",
+        ylab=expression('NEE (g C' ~m^-2~ d^-1*')'),
+        col="orange",
+        border="brown"
+)
+abline(a=0,b=0,col="black")
+dev.off()
+
+### GPP ###
+jpeg("plots/monthly_GPP.jpg", width = 900, height = 350, units = "px", quality = 120)
+boxplot(GPPgC_f_RF~factor(month.abb[month_local], levels = month.abb.level),
+        data=daily,
+        xlab="Month",
+        ylab=expression('GPP (g C' ~m^-2~ d^-1*')'),
+        col="orange",
+        border="brown"
+)
+abline(a=0,b=0,col="black")
+dev.off()
+
+### Reco ###
+jpeg("plots/monthly_Reco.jpg", width = 900, height = 350, units = "px", quality = 120)
+boxplot(Reco~factor(month.abb[month_local], levels = month.abb.level),
+        data=daily,
+        xlab="Month",
+        ylab=expression('Reco (g C' ~m^-2~ d^-1*')'),
+        col="orange",
+        border="brown"
+)
+abline(a=0,b=0,col="black")
+dev.off()
+
+
+
+  
+```
+
+
 ## Cumulative NEE, GPP, Reco 
 
 ```{r plot cumulative fluxes}
@@ -583,7 +654,8 @@ ggsave("plots/cumulative_flux.png")
 ```
 
 ## monthly met variables
-```{r plot monthly met, fig.height = 10, fig.width = 8, message = F, warning = F} 
+
+```{r plot daily met and monthly anomalies, fig.height = 10, fig.width = 8, message = F, warning = F} 
 # met_labels <- c(
 #   bquote(T[s]~'at 5 cm'),
 #   # bquote('NEE (g C' ~m^-2~ day^-1*')'),
@@ -706,6 +778,8 @@ ggplot() +
                date_labels = "%b %Y") +
   theme_bw()
 
+## hack for secondary y axis 
+
 print(TS5cm)
 ggsave("plots/TS5cm.png")
 print(Tair)
@@ -719,9 +793,106 @@ ggsave("plots/vpd.png")
 print(precip)
 ggsave("plots/precip.png")
 
+
 # ggplotly(water)
 
 ```
+
+```{r plot monthly met boxplot, message = F, warning = F}
+
+### soil temperature ###
+jpeg("plots/monthly_TS.5.jpg", width = 900, height = 350, units = "px", quality = 120)
+boxplot(TS.5~factor(month.abb[month_local], levels = month.abb.level),
+        data=BB_met,
+        xlab="Month",
+        ylab="TS.5 (C)",
+        col="orange",
+        border="brown"
+)
+dev.off()
+
+### relative humidity ###
+jpeg("plots/monthly_RH.jpg", width = 900, height = 350, units = "px", quality = 120)
+boxplot_RH <- boxplot(RH~factor(month.abb[month_local], levels = month.abb.level),
+        data=BB_met,
+        xlab="Month",
+        ylab="Relative humidity (%)",
+        col="orange",
+        border="brown"
+)
+dev.off()
+
+### barrometric pressure ###
+jpeg("plots/monthly_PA_2M.jpg", width = 900, height = 350, units = "px", quality = 120)
+boxplot(PA_2M~factor(month.abb[month_local], levels = month.abb.level),
+        data=BB_met,
+        xlab="Month",
+        ylab="Barrometric pressure (kPa)",
+        col="orange",
+        border="brown"
+)
+dev.off()
+
+### SWC ###
+jpeg("plots/monthly_SWC.jpg", width = 900, height = 350, units = "px", quality = 120)
+boxplot(SWC~factor(month.abb[month_local], levels = month.abb.level),
+        data=BB_met,
+        xlab="Month",
+        ylab=bquote('soil water content (' ~m^3~ m^-3*')'),
+        col="orange",
+        border="brown"
+)
+dev.off()
+
+### SWC ###
+jpeg("plots/monthly_Ta.jpg", width = 900, height = 350, units = "px", quality = 120)
+boxplot(Ta~factor(month.abb[month_local], levels = month.abb.level),
+        data=BB_met,
+        xlab="Month",
+        ylab=expression('Air temperature ('*~degree*C*')'),
+        col="orange",
+        border="brown"
+)
+dev.off()
+
+### PARin ###
+jpeg("plots/monthly_PARin.jpg", width = 900, height = 350, units = "px", quality = 120)
+boxplot(PARin~factor(month.abb[month_local], levels = month.abb.level),
+        data=BB_met,
+        xlab="Month",
+        ylab=expression("PAR ("*mu*"mol"~m^{-2}~s^{-2}*")"),
+        col="orange",
+        border="brown"
+)
+dev.off()
+
+### VPD ###
+jpeg("plots/monthly_VPD.jpg", width = 900, height = 350, units = "px", quality = 120)
+boxplot(VPD.y~factor(month.abb[month_local], levels = month.abb.level),
+        data=BB_met,
+        xlab="Month",
+        ylab="VPD",
+        col="orange",
+        border="brown"
+)
+dev.off()
+
+### WTD ###
+jpeg("plots/monthly_WTD.jpg", width = 900, height = 350, units = "px", quality = 120)
+boxplot(wtd*100~factor(month.abb[month_local], levels = month.abb.level),
+        data=BB_met,
+        xlab="Month",
+        ylab="WTD(cm)",
+        col="orange",
+        border="brown"
+)
+abline(a=0,b=0,col="black")
+dev.off()
+
+
+  
+```
+
 
 # Annual 
 
@@ -744,13 +915,6 @@ flux_an_sum <- daily %>%
   mutate(day_count = day_count$n) %>% 
   drop_na()
   # filter(day_count > 200)
-
-# set season 
-daily$season <- NA
-GS <- daily$month_local %in% c(4, 5, 6, 7, 8, 9)
-NGS <- daily$month_local %in% c(10, 11, 12, 1, 2, 3)
-daily$season[GS] <- "growing season"
-daily$season[NGS] <- "non-growing season"
 
 flux_season_sum <- daily %>%
   group_by(period, season) %>%
@@ -814,6 +978,8 @@ met_season_sum <- BB_met %>%
   ungroup()%>%
   drop_na()
 
+met_season_sum %>% arrange(season)
+
 #   
 # kable(flux_an_sum, caption = "Cumulative annual fluxes", 
 #     col.names = c("year", 
@@ -845,6 +1011,10 @@ write.csv(flux_an_sum, "df/flux_annual_summary.csv")
 write.csv(flux_season_sum, "df/flux_season_summary.csv")
 write.csv(met_an_means, "df/met_annual_summary.csv")
 write.csv(met_season_sum, "df/met_season_summary.csv")
+write.csv(met_monthly_means, "df/met_monthly_means.csv")
+write.csv(monthly_means, "df/flux_monthly_means.csv")
+write.csv(met_monthly_sd, "df/met_monthly_sd.csv")
+write.csv(monthly_sd, "df/flux_monthly_sd.csv")
 
 ```
 
