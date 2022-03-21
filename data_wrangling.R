@@ -146,7 +146,7 @@ co2_conv <- 12.01/(10^6)
 d.avg <- 1800 * 48  # 60s * 30min * 2 hours * 24 hours
 
 BB_flux <- BB1 %>%
-  select (c(DATE, date, jday, month_local, Year_local, time, period, season,
+  select(c(DATE, date, jday, month_local, Year_local, time, period, season,
             Tau, ET, RH, u., jday, co2_flux, ch4_flux, NEE_f,
             Reco, GPP_f, GPP_DT, Reco_DT, FCH4_f, FCH4_gf_RF,
             NEE_f_RF, GPP_f_RF)) %>%
@@ -225,14 +225,16 @@ BB_met <- BB1 %>%
   rename("TS.5" = "SOIL_TEMP_5CM", 
          "TS.10" = "SOIL_TEMP_10CM",
          "TS.50" = "SOIL_TEMP_50CM") %>% 
+  mutate(albedo = ifelse(is.infinite( SHORTWAVE_OUT / SHORTWAVE_IN) | SHORTWAVE_OUT / SHORTWAVE_IN > 1, NA,  SHORTWAVE_OUT / SHORTWAVE_IN), 
+         LST = ((LONGWAVE_OUT - (1 - 0.98) * LONGWAVE_IN) / (0.98 * 5.6e-8))^(1/4) - 273.15) %>%
   group_by(date) %>% 
   summarize(
     TS.5 = mean(TS.5, na.rm = T),  # soil temp
     TS.10 = mean(TS.10, na.rm = T),
     TS.50 = mean(TS.50, na.rm = T),
     RH = mean(RH_2M, na.rm = T),  # relative humidity
-    PARin = mean(INCOMING_PAR, na.rm = T) * d.avg * 1e-6,  # mol m2 day -1 
-    SWin = mean(SHORTWAVE_IN, na.rm = T),
+    PARin = mean(INCOMING_PAR, na.rm = T) * d.avg * 1e-6,  # mol m2 day-1 (daily total)
+    SWin = mean(SHORTWAVE_IN, na.rm = T),  # W m-2
     VPD.y = mean(VPD.y, na.rm = T),
     VPD.x = mean(VPD.x, na.rm = T),
     Precip = sum(PRECIP, na.rm = T),
@@ -242,10 +244,18 @@ BB_met <- BB1 %>%
     # WTH2 = mean(4.606 -(-0.89*WTH2+82)/100),  # water table height before 2018
     wtd = mean(WTH_absolute, na.rm = T),  # water Marion
     SWC = mean(SVWC, na.rm = T), # soil water content
-    LE = mean(LE, na.rm = T), 
-    H = mean(H, na.rm = T), 
-    br = mean(bowen_ratio, na.rm = T), 
-    ustar = mean(u., na.rm = T)
+    LE = mean(LE_f, na.rm = T),  # W m-2
+    H = mean(H_f, na.rm = T),   # W m-2
+    ET = sum(ET, na.rm = T),  # sum to get mm/day
+    br = mean(bowen_ratio, na.rm = T),  # unitless
+    ustar = mean(u., na.rm = T), 
+    LWin = mean(LONGWAVE_IN, na.rm = T), # W m-2 
+    LWout = mean(LONGWAVE_OUT, na.rm = T) ,  # W m-2 
+    SWout = mean(SHORTWAVE_OUT, na.rm = T),   # W m-2
+    albedo = mean(albedo, na.rm = T), # unitless
+    LST = mean(LST, na.rm = T),  # land surface temp
+    G = mean(G, na.rm = T),
+    G_corr = mean(G_corr, na.rm = T)
   ) %>%  
   mutate(month_local = month(date), 
          year_local = year(date), 
@@ -340,6 +350,7 @@ weekly.met <- BB1 %>%
     SWC = mean(SVWC, na.rm = T), # soil water content
     LE = mean(LE, na.rm = T), 
     H = mean(H, na.rm = T), 
+    ET = mean(ET, na.rm = T),
     ustar = mean(u., na.rm = T)
   ) %>%
   ungroup()

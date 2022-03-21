@@ -262,13 +262,20 @@ met_monthly <- BB_met %>%
       TS.50 = mean(TS.50, na.rm = T),
       RH = mean(RH, na.rm = T),  # relative humidity
       PARin = mean(PARin, na.rm = T),  #u mol m-2 day-1
-      SWin = mean(SWin, na.rm = T),
+      SWin = mean(SWin, na.rm = T),  # W m-2 day-1
       VPD.y = mean(VPD.y, na.rm = T),
       Precip = sum(Precip, na.rm = T), # mm per month
       PA_2M = mean(PA_2M, na.rm = T),  # barrometric pressure from met
       Ta = mean(Ta, na.rm = T),  # air temp at 2 m
       SWC = mean(SWC, na.rm = T), 
-      wtd = mean(wtd, na.rm = T)) %>%
+      ET = sum(ET, na.rm = T),  # mm/month
+      wtd = mean(wtd, na.rm = T), 
+      br = mean(br, na.rm = T),  # unitless
+      albedo = mean(albedo, na.rm = T), # unitless
+      LST = mean(LST, na.rm = T),  # land surface temp 
+      G = mean(G, na.rm = T),
+      G_corr = mean(G_corr, na.rm = T)
+      ) %>%
   mutate(month_local = month(floor_date))
 
 # calculate monthly means (averaged across all years) met variables
@@ -288,8 +295,15 @@ met_monthly_means <- met_monthly %>%
       Precip = mean(Precip, na.rm = T),
       PA_2M = mean(PA_2M, na.rm = T),  # barrometric pressure from met
       Ta = mean(Ta, na.rm = T),  # air temp at 2 m
-      SWC = mean(SWC, na.rm = T), 
-      wtd = mean(wtd, na.rm = T))
+      SWC = mean(SWC, na.rm = T),
+      ET = mean(ET, na.rm = T),
+      wtd = mean(wtd, na.rm = T), 
+      br = mean(br, na.rm = T),  # unitless
+      albedo = mean(albedo, na.rm = T), # unitless
+      LST = mean(LST, na.rm = T),  # land surface temp 
+      G = mean(G, na.rm = T), 
+      G_corr = mean(G_corr, na.rm = T)
+      )
 
 # calculate stdev (across all years) for monthly met variables
 met_monthly_sd <- met_monthly %>% 
@@ -305,7 +319,14 @@ met_monthly_sd <- met_monthly %>%
       PA_2M = sd(PA_2M, na.rm = T),  # barrometric pressure from met
       Ta = sd(Ta, na.rm = T),  # air temp at 2 m
       SWC = sd(SWC, na.rm = T), 
-      wtd = sd(wtd, na.rm = T))
+      ET = sd(ET, na.rm = T),
+      wtd = sd(wtd, na.rm = T), 
+      br = sd(br, na.rm = T),  # unitless
+      albedo = sd(albedo, na.rm = T), # unitless
+      LST = sd(LST, na.rm = T),  # land surface temp 
+      G = sd(G, na.rm = T), 
+      G_corr = sd(G_corr, na.rm = T)      
+      )
 
 
 #### calculate monthly anomalies for met variables ####
@@ -315,10 +336,12 @@ met_monthly_anom <- met_monthly
 #   met_monthly_anom[i, c(3:14)] <- met_monthly_anom[i, c(3:14)] -  
 #     met_monthly_means[met_monthly$month_local[i], c(2:13)]
 #   }
+start <- 2 
+end <- ncol(met_monthly_anom)-1
 for(i in 1:nrow(met_monthly_anom)){
   index <- which(met_monthly_means$month_local == met_monthly_anom$month_local[i])
-  met_monthly_anom[i, c(2:17)] <- met_monthly_anom[i,  c(2:17)] -
-    met_monthly_means[index, c(2:17)]
+  met_monthly_anom[i, c(start:end)] <- met_monthly_anom[i,  c(start:end)] -
+    met_monthly_means[index, c(start:end)]
   # print(i)
   }
 
@@ -778,7 +801,22 @@ ggplot() +
                date_labels = "%b %Y") +
   theme_bw()
 
-## hack for secondary y axis 
+
+ET <- BB_met%>%
+ggplot() +
+  geom_bar(data = met_monthly_anom, aes(x = floor_date, y = ET*2), fill = "gray", stat = "identity") +
+  geom_line(aes(x = date, y = rollmean(ET, 7, fill = NA))) +
+  scale_y_continuous(
+    # limits = c(0, 30),
+    name = bquote("E (mm)"),
+    sec.axis = sec_axis(~./2, name = bquote(Delta*~"E (mm)"))
+    ) +
+  labs(x = "") +
+  scale_x_date(date_breaks = "1 year", 
+               date_labels = "%b %Y") +
+  theme_bw()
+
+
 
 print(TS5cm)
 ggsave("plots/TS5cm.png")
@@ -792,6 +830,8 @@ print(VPD)
 ggsave("plots/vpd.png")
 print(precip)
 ggsave("plots/precip.png")
+print(ET)
+ggsave("plots/ET.png")
 
 
 # ggplotly(water)
@@ -890,6 +930,68 @@ abline(a=0,b=0,col="black")
 dev.off()
 
 
+
+
+## plot daily met ##
+
+
+met_labels <- c(
+  expression('Air temperature ('*~degree*C*')'),
+  expression('Soil temperature ('*~degree*C*')'),
+  expression("PAR ("*mu*"mol"~m^{-2}~s^{-2}*")"),
+  expression("E (mm)"),
+  "WTD (m)",
+  "Precip (mm)"
+)
+
+
+## using daily data
+
+met_year <- BB_met %>%
+  group_by(period) %>%
+  mutate(Precip = cumsum(Precip), 
+         ET = cumsum(ET)) %>%
+  ungroup() %>%
+  # mutate(
+  #        # Ta = rollmean(Ta, 14, fill = NA),
+  # # #        PARin = rollmean(PARin, 14, fill = NA),
+  # # #        SWin = rollmean(SWin, 14, fill = NA),
+  # #        ET = rollmean(ET, 14, fill = NA)
+  # # #        Precip = rollmean(Precip, 14, fill = NA)
+  #        ) %>%
+  select(c(date, period, Ta, TS.5, PARin, ET, wtd, Precip)) %>%
+  pivot_longer(cols = c(Ta, TS.5, PARin, ET, wtd, Precip), names_to = "variable", values_to = "value") %>%
+  mutate(variable_lab = factor(variable,
+                               levels = c("Ta", "TS.5", "PARin", 'ET', 'wtd', 'Precip'),
+                               labels = met_labels)) %>%
+  group_by(variable,period) %>%
+  arrange(date) %>%
+  mutate(order = row_number()) %>%
+  ungroup() %>%
+  mutate(day_label = case_when(day(date) == 1L ~ format(date, "%b"),
+                     TRUE ~ NA_character_)
+         )
+  
+x_break <- met_year$order[!is.na(met_year$day_label)][1:60]
+x_label <- met_year$day_label[!is.na(met_year$day_label)][1:60]
+x_label
+windows()
+met_year %>% 
+  ggplot(aes(x = order, y = value, color = factor(period), group = factor(period))) + 
+  geom_line(size = 1) + 
+  facet_wrap(vars(variable_lab), ncol = 1,
+               scales = "free_y",
+               strip.position = "left", 
+               labeller = label_parsed
+             ) +
+  labs(x = "", y = "", color = "Year") +
+  scale_x_continuous(
+    breaks = unique(x_break),
+    labels = unique(x_label)) +
+  theme_bw() +
+  theme(strip.background = element_blank(),
+        strip.placement = "outside")
+ggsave("plots/met_yearly.png")
   
 ```
 
@@ -948,7 +1050,14 @@ met_an_means <- BB_met %>%
       PA = mean(PA_2M, na.rm = T),  # barrometric pressure from met
       Ta = mean(Ta, na.rm = T),  # air temp at 2 m
       SWC = mean(SWC, na.rm = T), 
-      wtd = mean(wtd, na.rm = T)) %>%
+      ET = sum(ET, na.rm = T),
+      wtd = mean(wtd, na.rm = T), 
+      br = mean(br, na.rm = T),  # unitless
+      albedo = mean(albedo, na.rm = T), # unitless
+      LST = mean(LST, na.rm = T),  # land surface temp 
+      G = mean(G, na.rm = T), 
+      G_corr = mean(G_corr, na.rm = T)      
+    ) %>%
   ungroup()%>% 
   drop_na()
 
@@ -974,7 +1083,14 @@ met_season_sum <- BB_met %>%
       PA = mean(PA_2M, na.rm = T),  # barrometric pressure from met
       Ta = mean(Ta, na.rm = T),  # air temp at 2 m
       SWC = mean(SWC, na.rm = T), 
-      wtd = mean(wtd, na.rm = T)) %>%
+      ET = sum(ET, na.rm = T),
+      wtd = mean(wtd, na.rm = T),
+      br = mean(br, na.rm = T),  # unitless
+      albedo = mean(albedo, na.rm = T), # unitless
+      LST = mean(LST, na.rm = T),  # land surface temp 
+      G = mean(G, na.rm = T), 
+      G_corr = mean(G_corr, na.rm = T)
+      ) %>%
   ungroup()%>%
   drop_na()
 
@@ -1307,7 +1423,7 @@ plot_ly(data = weekly.nGF, x = ~floor_date, y = ~-co2gC, type = "scatter", mode 
 
   
 
-write.csv(pheno_index, "df/pheno_index")
+write.csv(pheno_index, "df/pheno_index.csv")
 
 
 
@@ -1620,6 +1736,7 @@ RS_indices_daily <- RS_indices %>%
         NDWI = mean(NDWI, na.rm = T), 
         NDWI_gao = mean(NDWI_gao, na.rm = T), 
         LST = mean(CELSIUS, na.rm = T))
+RS_indices_daily <- RS_indices_daily[-15, ] # delete a row (data for April 13 2016, cloudy)
 
 daily_for_RS <- left_join(daily, BB_met) %>% 
   select(date, NEE_f_RF, GPP_f_RF, Reco, CH4gC_f_RF, 
@@ -1639,7 +1756,6 @@ daily_for_RS <- left_join(daily, BB_met) %>%
 RS_indices <- left_join(RS_indices_daily, daily_for_RS) %>% drop_na()
 
 
-# calculate annual RS indices (mean, peak, median)
 RS_indices %>% 
   plot_ly(x = ~date, y = ~NDVI, type = "scatter", mode= "lines", name = "NDVI") %>% 
   add_trace(y =~NDWI_gao, type = "scatter", mode = "lines", name = "NDWI") %>% 
@@ -1650,6 +1766,49 @@ RS_indices %>%
 
 RS_indices %>% 
   plot_ly(x =~NDVI, y =~GPP_7, type = "scatter", mode = "markers")
+
+
+# calculate annual RS indices (mean, peak, median) for growing season
+
+RS_GS <- RS_indices %>% 
+  mutate(month_local = month(date)) %>% 
+  filter(month_local  %in% c(4, 5, 6, 7, 8, 9)) %>%
+  set_period() %>% 
+  drop_na()
+
+RS_GS_summary <- RS_GS %>% 
+  ddply("period", summarise,
+    NDVI_mean = mean(NDVI, na.rm = T), 
+    NDVI_median = median(NDVI, na.rm = T), 
+    NDVI_max = max(NDVI, na.rm = T), 
+    NDVI_min = min(NDVI, na.rm = T),
+    GPP_mean = mean(GPP_7, na.rm = T), 
+    GPP_median = median(GPP_7, na.rm = T), 
+    GPP_max = max(GPP_7, na.rm = T), 
+    GPP_min = min(GPP_7, na.rm = T),
+    LST_mean = mean(LST, na.rm = T), 
+    LST_median = median(LST, na.rm = T), 
+    LST_max = max(LST, na.rm = T), 
+    LST_min = min(LST, na.rm = T))
+
+
+RS_GS %>% 
+  ggplot(aes(x = NDVI, y = GPP_7)) + 
+  geom_point() + 
+  geom_smooth(method = "lm", se = F) +
+  theme_bw()
+
+summary(lm(GPP_7~NDVI, RS_GS))
+summary(lm(GPP_7~NDVI*period, RS_GS))
+anova(lm(GPP_7~NDVI, RS_GS), lm(GPP_7~NDVI*period, RS_GS))
+# relationship between GPP and NDVI didn't change from year to year
+
+
+plot(RS_GS_summary$NDVI_mean, RS_GS_summary$GPP_mean)
+plot(RS_GS_summary$NDVI_median, RS_GS_summary$GPP_median)
+plot(RS_GS_summary$NDVI_max, RS_GS_summary$GPP_max)
+plot(RS_GS_summary$NDVI_min, RS_GS_summary$GPP_min)
+
 
 ```
 
