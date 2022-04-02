@@ -507,62 +507,59 @@ ggplot() +
   theme_bw()
 
 
-# NEE <- daily%>%
-# ggplot() +
-#   geom_point(data = BB1, aes(x = date, y = NEE_f_RF/10), color = "gray", stat = "identity") +
-#   geom_line(aes(x = date, y = rollmean(NEEgC_f_RF, 7, fill = NA))) +
-#   scale_y_continuous(
-#     # limits = c(-4, 2),
-#     name = expression('NEE (g C' ~m^-2~ d^-1*')'),
-#     sec.axis = sec_axis(~.*10, name = bquote("NEE ("*mu*~"mol"~m^-2~ s^-1*')'))
-#     ) +
-#   labs(x = "") +
-#   scale_x_date(date_breaks = "1 year", 
-#                date_labels = "%b %Y") +
-#   theme_bw()
-# 
-# GPP <- daily%>%
-# ggplot() +
-#   geom_point(data = BB1, aes(x = date, y = GPP_f_RF/5), color = "gray", stat = "identity") +
-#   geom_line(aes(x = date, y = rollmean(GPPgC_f_RF, 7, fill = NA))) +
-#   scale_y_continuous(
-#     # limits = c(-4, 2),
-#     name = expression('GPP (g C' ~m^-2~ d^-1*')'), 
-#     sec.axis = sec_axis(~.*5, name = bquote("GPP ("*mu*~"mol"~m^-2~ s^-1*')'))
-#     ) +
-#   labs(x = "") +
-#   scale_x_date(date_breaks = "1 year", 
-#                date_labels = "%b %Y") +
-#   theme_bw()
-# 
-# 
-# Reco <- daily%>%
-# ggplot() +
-#   geom_point(data = BB1, aes(x = date, y = Reco), color = "gray", stat = "identity") +
-#   geom_line(aes(x = date, y = rollmean(RecogC, 7, fill = NA))) +
-#   scale_y_continuous(
-#     # limits = c(-4, 2),
-#     name = expression('Reco (g C' ~m^-2~ d^-1*')'), 
-#     sec.axis = sec_axis(~., name = bquote("Reco ("*mu*~"mol"~m^-2~ s^-1*')'))
-#     ) +
-#   labs(x = "") +
-#   scale_x_date(date_breaks = "1 year", 
-#                date_labels = "%b %Y") +
-#   theme_bw()
-# 
-# 
-# CH4 <- daily%>%
-# ggplot() +
-#   geom_point(data = BB1, aes(x = date, y = FCH4_gf_RF/5), color = "gray", stat = "identity") +
-#   geom_line(aes(x = date, y = rollmean(CH4gC_f_RF, 7, fill = NA))) +
-#   scale_y_continuous(
-#     name = expression(F[CH4]~'(g C' ~m^-2~ d^-1*')'), 
-#     sec.axis = sec_axis(~.*5, name = bquote(F[CH4]~"("*mu*"mol"~m^-2~ s^-1*')'))
-#     ) +
-#   labs(x = "") +
-#   scale_x_date(date_breaks = "1 year", 
-#                date_labels = "%b %Y") +
-#   theme_bw()
+
+# using daily data 
+
+flux_labels <- c(
+  bquote(NEE~'(g C' ~m^-2~d^-1~ ')'),
+  bquote(GPP~'(g C' ~m^-2~d^-1~')'),
+  bquote(Reco~'(g C' ~m^-2~d^-1~')'),
+  bquote(CH[4]~'(g C' ~m^-2~d^-1~')')
+)
+
+flux_year <- daily %>%
+  group_by(period) %>%
+  ungroup() %>%
+  mutate(
+          NEEgC_f_RF = rollmean(NEEgC_f_RF, 14, fill = NA),
+          GPPgC_f_RF = rollmean(GPPgC_f_RF, 14, fill = NA),
+          RecogC = rollmean(RecogC, 14, fill = NA), 
+          CH4gC_f_RF = rollmean(CH4gC_f_RF, 14, fill = NA), 
+
+         ) %>%
+  select(c(date, period, NEEgC_f_RF, GPPgC_f_RF, RecogC, CH4gC_f_RF)) %>%
+  pivot_longer(cols = c(NEEgC_f_RF, GPPgC_f_RF, RecogC, CH4gC_f_RF), names_to = "variable", values_to = "value") %>%
+  mutate(variable_lab = factor(variable,
+                               levels = c("NEEgC_f_RF", "GPPgC_f_RF", "RecogC", "CH4gC_f_RF"),
+                               labels = flux_labels)) %>%
+  group_by(variable,period) %>%
+  arrange(date) %>%
+  mutate(order = row_number()) %>%
+  ungroup() %>%
+  mutate(day_label = case_when(day(date) == 1L ~ format(date, "%b"),
+                     TRUE ~ NA_character_)
+         )
+  
+x_break <- flux_year$order[!is.na(flux_year$day_label)][1:60]
+x_label <- flux_year$day_label[!is.na(flux_year$day_label)][1:60]
+x_label
+windows()
+flux_year %>% 
+  ggplot(aes(x = order, y = value, color = factor(period), group = factor(period))) + 
+  geom_line(size = 1) + 
+  facet_wrap(vars(variable_lab), ncol = 1,
+               scales = "free_y",
+               strip.position = "left", 
+               labeller = label_parsed
+             ) +
+  labs(x = "", y = "", color = "Year") +
+  scale_x_continuous(
+    breaks = unique(x_break),
+    labels = unique(x_label)) +
+  theme_bw() +
+  theme(strip.background = element_blank(),
+        strip.placement = "outside")
+ggsave("plots/flux_yearly.png")
 
 
 print(NEE)
@@ -817,6 +814,21 @@ ggplot() +
   theme_bw()
 
 
+PA_2M <- BB_met%>%
+ggplot() +
+  # geom_bar(data = met_monthly_anom, aes(x = floor_date, y = PA_2M*100), fill = "gray", stat = "identity") +
+  geom_line(aes(x = date, y = rollmean(PA_2M, 7, fill = NA))) +
+  # scale_y_continuous(
+  #   # limits = c(0, 30),
+  #   name = bquote("Pa (kPa)"),
+  #   sec.axis = sec_axis(~./100, name = bquote(Delta*~"Pa (kPa)"))
+  #   ) +
+  # labs(x = "") +
+  # scale_x_date(date_breaks = "1 year", 
+  #              date_labels = "%b %Y") +
+  theme_bw()
+
+
 
 print(TS5cm)
 ggsave("plots/TS5cm.png")
@@ -941,14 +953,16 @@ met_labels <- c(
   expression("PAR ("*mu*"mol"~m^{-2}~s^{-2}*")"),
   expression("E (mm)"),
   "WTD (m)",
-  "Precip (mm)"
+  "Precip (mm)" 
+  # "Pa (kPa)"
 )
 
 
-## using daily data
+## using daily data for met var
 
 met_year <- BB_met %>%
   group_by(period) %>%
+  filter(period == "2015-2016") %>%
   mutate(Precip = cumsum(Precip), 
          ET = cumsum(ET)) %>%
   ungroup() %>%
@@ -971,9 +985,9 @@ met_year <- BB_met %>%
   mutate(day_label = case_when(day(date) == 1L ~ format(date, "%b"),
                      TRUE ~ NA_character_)
          )
-  
-x_break <- met_year$order[!is.na(met_year$day_label)][1:60]
-x_label <- met_year$day_label[!is.na(met_year$day_label)][1:60]
+
+x_break <- met_year$order[!is.na(met_year$day_label)] [1:72]  # 30 * 7  
+x_label <- met_year$day_label[!is.na(met_year$day_label)]
 x_label
 windows()
 met_year %>% 
@@ -992,7 +1006,118 @@ met_year %>%
   theme(strip.background = element_blank(),
         strip.placement = "outside")
 ggsave("plots/met_yearly.png")
+
+
+
+## using daily data for flux var (LE, H)
+
+fluxmet_labels <- c(
+  expression('LE ('~W~m^2~')'),
+  expression('H ('~W~m^2~')'),
+  expression("ET (mm "~d^{-1}~")"), 
+  expression('G ('~W~m^2~')')
+)
+
+fluxmet_year <- BB_met %>%
+  group_by(period) %>%
+  ungroup() %>%
+  mutate(
+         LE = rollmean(LE, 14, fill = NA),
+         H = rollmean(H, 14, fill = NA),
+         ET = rollmean(ET, 14, fill = NA),
+         G_corr = rollmean(G_corr, 14, fill = NA),
+         ) %>%
+  select(c(date, period, LE, H, ET, G_corr)) %>%
+  pivot_longer(cols = c(LE, H, ET, G_corr), names_to = "variable", values_to = "value") %>%
+  mutate(variable_lab = factor(variable,
+                               levels = c("LE", "H", "ET", 'G_corr'),
+                               labels = fluxmet_labels)) %>%
+  group_by(variable,period) %>%
+  arrange(date) %>%
+  mutate(order = row_number()) %>%
+  ungroup() %>%
+  mutate(day_label = case_when(day(date) == 1L ~ format(date, "%b"),
+                     TRUE ~ NA_character_)
+         )
   
+x_break <- fluxmet_year$order[!is.na(fluxmet_year$day_label)][1:60]
+x_label <- fluxmet_year$day_label[!is.na(fluxmet_year$day_label)][1:60]
+x_label
+windows()
+fluxmet_year %>% 
+  ggplot(aes(x = order, y = value, color = factor(period), group = factor(period))) + 
+  geom_line(size = 1) + 
+  facet_wrap(vars(variable_lab), ncol = 1,
+               scales = "free_y",
+               strip.position = "left", 
+               labeller = label_parsed
+             ) +
+  labs(x = "", y = "", color = "Year") +
+  scale_x_continuous(
+    breaks = unique(x_break),
+    labels = unique(x_label)) +
+  theme_bw() +
+  theme(strip.background = element_blank(),
+        strip.placement = "outside")
+ggsave("plots/fluxmet_yearly.png")  
+
+
+
+## variables for MLR 
+
+## using daily data for flux var (LE, H)
+
+met2_label <- c(
+  expression('LE ('~W~m^2~')'),
+  expression('TS.5 ('*~degree*C*')'),
+  "WTD (m)",
+  "Pa (kPa)", 
+  "RH"
+)
+
+met2_year <- BB_met %>%
+  group_by(period) %>%
+  ungroup() %>%
+  mutate(
+         LE = rollmean(LE, 14, fill = NA),
+         TS.5 = rollmean(TS.5, 14, fill = NA),
+         wtd = rollmean(wtd, 14, fill = NA),
+         PA_2M = rollmean(PA_2M, 14, fill = NA),
+         RH = rollmean(RH, 14, fill = NA),
+         ) %>%
+  select(c(date, period, LE, TS.5, wtd, PA_2M, RH)) %>%
+  pivot_longer(cols = c(LE, TS.5, wtd, PA_2M, RH), names_to = "variable", values_to = "value") %>%
+  mutate(variable_lab = factor(variable,
+                               levels = c("LE", "TS.5", "wtd", "PA_2M", "RH"),
+                               labels = met2_label)) %>%
+  group_by(variable,period) %>%
+  arrange(date) %>%
+  mutate(order = row_number()) %>%
+  ungroup() %>%
+  mutate(day_label = case_when(day(date) == 1L ~ format(date, "%b"),
+                     TRUE ~ NA_character_)
+         )
+  
+x_break <- met2_year$order[!is.na(met2_year$day_label)][1:60]
+x_label <- met2_year$day_label[!is.na(met2_year$day_label)][1:60]
+x_label
+windows()
+met2_year %>% 
+  ggplot(aes(x = order, y = value, color = factor(period), group = factor(period))) + 
+  geom_line(size = 1) + 
+  facet_wrap(vars(variable_lab), ncol = 1,
+               scales = "free_y",
+               strip.position = "left", 
+               labeller = label_parsed
+             ) +
+  labs(x = "", y = "", color = "Year") +
+  scale_x_continuous(
+    breaks = unique(x_break),
+    labels = unique(x_label)) +
+  theme_bw() +
+  theme(strip.background = element_blank(),
+        strip.placement = "outside")
+ggsave("plots/met2_yearly.png")  
 ```
 
 

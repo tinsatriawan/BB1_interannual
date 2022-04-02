@@ -72,8 +72,8 @@ set_season <- function(input, date_vector){
 
 # define directory
 
-dir_rf <- "G:\\.shortcut-targets-by-id\\1txCh9lZ7VGCujXGvBaJCMVnuxT-65q4K\\Micromet Lab\\Projects\\2014-BB1 Burns Bog\\Flux-tower (1)\\flux_data\\for_uncertainty\\RF_results"
-dir_unc <- "G:\\.shortcut-targets-by-id\\1txCh9lZ7VGCujXGvBaJCMVnuxT-65q4K\\Micromet Lab\\Projects\\2014-BB1 Burns Bog\\Flux-tower (1)\\flux_data\\for_uncertainty"
+dir_rf <- "G:\\.shortcut-targets-by-id\\1txCh9lZ7VGCujXGvBaJCMVnuxT-65q4K\\Micromet Lab\\Projects\\2014-BB1 Burns Bog\\Flux-tower\\flux_data\\for_uncertainty\\RF_results"
+dir_unc <- "G:\\.shortcut-targets-by-id\\1txCh9lZ7VGCujXGvBaJCMVnuxT-65q4K\\Micromet Lab\\Projects\\2014-BB1 Burns Bog\\Flux-tower\\flux_data\\for_uncertainty"
 
 # dir_rf <- "G:\\.shortcut-targets-by-id\\1txCh9lZ7VGCujXGvBaJCMVnuxT-65q4K\\Micromet Lab\\People\\2020-Tin Satriawan\\for_uncertainty\\RF_results"
 # dir_unc <- "G:\\.shortcut-targets-by-id\\1txCh9lZ7VGCujXGvBaJCMVnuxT-65q4K\\Micromet Lab\\People\\2020-Tin Satriawan\\for_uncertainty"
