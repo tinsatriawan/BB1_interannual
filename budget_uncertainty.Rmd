@@ -51,9 +51,9 @@ library(dplyr)
 
 # define directory
 
-dir_rf <- "G:\\.shortcut-targets-by-id\\1txCh9lZ7VGCujXGvBaJCMVnuxT-65q4K\\Micromet Lab\\Projects\\2014-Burns Bog\\Flux-tower\\flux_data\\for_uncertainty\\RF_results"
+dir_rf <- "G:\\.shortcut-targets-by-id\\1txCh9lZ7VGCujXGvBaJCMVnuxT-65q4K\\Micromet Lab\\Projects\\2014-BB1 Burns Bog\\Flux-tower\\flux_data\\for_uncertainty\\RF_results"
 
-dir_unc <- "G:\\.shortcut-targets-by-id\\1txCh9lZ7VGCujXGvBaJCMVnuxT-65q4K\\Micromet Lab\\Projects\\2014-Burns Bog\\Flux-tower\\flux_data\\for_uncertainty"
+dir_unc <- "G:\\.shortcut-targets-by-id\\1txCh9lZ7VGCujXGvBaJCMVnuxT-65q4K\\Micromet Lab\\Projects\\2014-BB1 Burns Bog\\Flux-tower\\flux_data\\for_uncertainty"
 
 # ## read random forest gap-filled NEE result (already averaged)
 # RF_NEE <- readRDS(paste0(dir_rf,"/BB_NEE_rf_result_for_uncertainty"))

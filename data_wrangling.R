@@ -27,8 +27,8 @@ library(lognorm)
 library(reshape2)
 library(matrixStats)
 library(gtools)
+library(bigleaf)
 library(dplyr)
-
 
 
 #####------------- FUNCTIONS -------------####
@@ -37,14 +37,14 @@ library(dplyr)
 set_period <- function(data) {
   data$period <- NA 
   
-  y_2015_2016 <- data$date >= "2015-10-01" & data$date < "2016-10-01"
+  # y_2015_2016 <- data$date >= "2015-10-01" & data$date < "2016-10-01"   # remove 2015 2022/04/07
   y_2016_2017 <- data$date >= "2016-10-01" & data$date < "2017-10-01"
   y_2017_2018 <- data$date >= "2017-10-01" & data$date < "2018-10-01"
   y_2018_2019 <- data$date >= "2018-10-01" & data$date < "2019-10-01"
   y_2019_2020 <- data$date >= "2019-10-01" & data$date < "2020-10-01"
   y_2020_2021 <- data$date >= "2020-10-01" & data$date < "2021-10-01"
   
-  data$period[y_2015_2016] <- "2015-2016"
+  # data$period[y_2015_2016] <- "2015-2016"     # remove 2015 2022/04/07
   data$period[y_2016_2017] <- "2016-2017"
   data$period[y_2017_2018] <- "2017-2018"
   data$period[y_2018_2019] <- "2018-2019"
@@ -66,6 +66,11 @@ set_season <- function(input, date_vector){
   input
 }
 
+gg_color_hue <- function(n) {
+  hues = seq(15, 375, length = n + 1)
+  hcl(h = hues, l = 65, c = 100)[1:n]
+}
+
 
 
 #####------------------- READ DATA ---------------------#####
@@ -74,11 +79,12 @@ set_season <- function(input, date_vector){
 
 dir_rf <- "G:\\.shortcut-targets-by-id\\1txCh9lZ7VGCujXGvBaJCMVnuxT-65q4K\\Micromet Lab\\Projects\\2014-BB1 Burns Bog\\Flux-tower\\flux_data\\for_uncertainty\\RF_results"
 dir_unc <- "G:\\.shortcut-targets-by-id\\1txCh9lZ7VGCujXGvBaJCMVnuxT-65q4K\\Micromet Lab\\Projects\\2014-BB1 Burns Bog\\Flux-tower\\flux_data\\for_uncertainty"
-
+dir <- "G:\\.shortcut-targets-by-id\\1txCh9lZ7VGCujXGvBaJCMVnuxT-65q4K\\Micromet Lab\\Projects\\2014-BB1 Burns Bog\\Flux-tower\\flux_data\\"
 # dir_rf <- "G:\\.shortcut-targets-by-id\\1txCh9lZ7VGCujXGvBaJCMVnuxT-65q4K\\Micromet Lab\\People\\2020-Tin Satriawan\\for_uncertainty\\RF_results"
 # dir_unc <- "G:\\.shortcut-targets-by-id\\1txCh9lZ7VGCujXGvBaJCMVnuxT-65q4K\\Micromet Lab\\People\\2020-Tin Satriawan\\for_uncertainty"
 
-
+# read climate normals
+climate_normals <- read_csv("climate_normals_1981_2010_yvr.csv")
 
 ## read NEE RF gapfilling with 20x iteration
 result_RF_NEE <- readRDS(paste0(dir_rf,"/BB_NEE_rf_result"))
@@ -91,6 +97,12 @@ RF_NEE <- data.frame(DateTime = RF_NEE$DateTime,
 ## read CH4 RF gapfilling with 20x iteration
 result_RF_FCH4 <- read_csv(paste0(dir_rf,"/BB_FCH4_rf_result.csv"))
 
+
+## read LE & H RF gapfilling 
+result_RF_LE <- read_csv(paste0(dir, "RF_results/BB_LE_rf_result.csv"))
+result_RF_H <- read_csv(paste0(dir, "RF_results/BB_H_rf_result.csv"))
+
+
 # read flux & met data
 BB1 <- fread(paste0(dir_unc,"/BB_L3.csv"))
 BB1[BB1 == -9999] <- NA
@@ -101,6 +113,7 @@ BB1 <- BB1 %>%
   mutate(period = NA, 
          season = NA)
 
+####------- fill gaps in NEE ----####
 
 # fill long gaps after MDS gapfilling with values from random forest gapfilling
 long_gap2 <- BB1$DATE >= as.POSIXct("2015-12-01 00:30:00", tz = "UTC") &
@@ -126,13 +139,29 @@ which(is.na(BB1$NEE_f_RF))
 BB1$GPP_f_RF <- BB1$Reco - BB1$NEE_f_RF
 
 
-# filter date
+
+####------- fill gaps in LE ----####
+BB1$LE_f <- ifelse(is.na(BB1$LE_f), result_RF_LE$filled, BB1$LE_f)
+
+####------- fill gaps in ET ----####
+# calculate ET from LE, ET = LE/latent heat of vaporization
+BB1$ET_f <- ifelse(is.na(BB1$ET), (LE.to.ET(BB1$LE_f, BB1$AIR_TEMP_2M) * 1800), BB1$ET)
+which(is.na(BB1$ET_f))
+
+plot(x = BB1$DATE, y = BB1$ET)
+plot(x = BB1$DATE, y = BB1$ET_f)
+
+####------- fill gaps in H ----####
+BB1$H_f <- ifelse(is.na(BB1$H_f), result_RF_H$filled, BB1$H_f)
+
+
+# filter date     # remove 2015 2022/04/07
 BB1 <- BB1 %>% 
-  filter(DATE >= as.POSIXct("2015-10-01 00:30:00", tz = "UTC") & DATE < as.POSIXct("2021-10-01 00:00:00", tz = "UTC")) 
+  filter(DATE >= as.POSIXct("2016-10-01 00:30:00", tz = "UTC") & DATE < as.POSIXct("2021-10-01 00:00:00", tz = "UTC")) 
 result_RF_FCH4 <- result_RF_FCH4 %>% 
-  filter(DateTime >= as.POSIXct("2015-10-01 00:30:00", tz = "UTC") & DateTime < as.POSIXct("2021-10-01 00:00:00", tz = "UTC")) 
+  filter(DateTime >= as.POSIXct("2016-10-01 00:30:00", tz = "UTC") & DateTime < as.POSIXct("2021-10-01 00:00:00", tz = "UTC")) 
 result_RF_NEE <- result_RF_NEE %>% 
-  filter(DateTime >= as.POSIXct("2015-10-01 00:30:00", tz = "UTC") & DateTime < as.POSIXct("2021-10-01 00:00:00", tz = "UTC"))
+  filter(DateTime >= as.POSIXct("2016-10-01 00:30:00", tz = "UTC") & DateTime < as.POSIXct("2021-10-01 00:00:00", tz = "UTC"))
 
 
 
@@ -143,13 +172,12 @@ result_RF_NEE <- result_RF_NEE %>%
 #Conversion factors
 ch4_conv <- 12.01/(10^6)
 co2_conv <- 12.01/(10^6) 
-d.avg <- 1800 * 48  # 60s * 30min * 2 hours * 24 hours
+d.avg <- 1800 * 48  # 3600 * 24 hours
 
 BB_flux <- BB1 %>%
   select(c(DATE, date, jday, month_local, Year_local, time, period, season,
-            Tau, ET, RH, u., jday, co2_flux, ch4_flux, NEE_f,
-            Reco, GPP_f, GPP_DT, Reco_DT, FCH4_f, FCH4_gf_RF,
-            NEE_f_RF, GPP_f_RF)) %>%
+            Tau, ET, RH, u., jday, co2_flux, ch4_flux, NEE_f, NEE_f_RF,
+            Reco, GPP_f, GPP_DT, Reco_DT, FCH4_f, FCH4_gf_RF, GPP_f_RF)) %>%
   dplyr::rename(year_local = Year_local)
 
 
@@ -246,7 +274,7 @@ BB_met <- BB1 %>%
     SWC = mean(SVWC, na.rm = T), # soil water content
     LE = mean(LE_f, na.rm = T),  # W m-2
     H = mean(H_f, na.rm = T),   # W m-2
-    ET = sum(ET, na.rm = T),  # sum to get mm/day
+    ET = sum(ET_f, na.rm = T),  # sum to get mm/day
     br = mean(bowen_ratio, na.rm = T),  # unitless
     ustar = mean(u., na.rm = T), 
     LWin = mean(LONGWAVE_IN, na.rm = T), # W m-2 
@@ -255,7 +283,9 @@ BB_met <- BB1 %>%
     albedo = mean(albedo, na.rm = T), # unitless
     LST = mean(LST, na.rm = T),  # land surface temp
     G = mean(G, na.rm = T),
-    G_corr = mean(G_corr, na.rm = T)
+    G_corr = mean(G_corr, na.rm = T), 
+    Rn = mean(NR, na.rm = T),  # W m-2
+    PAR_SWin = mean(PARin/SWin, na.rm = T)  # no unit
   ) %>%  
   mutate(month_local = month(date), 
          year_local = year(date), 
@@ -328,7 +358,7 @@ weekly.GF <- BB_flux %>%
 
 ##### weekly met data #####
 
-# DAILY MET DATA (averaged per week)
+# DAILY NON GAPFILLED MET DATA (averaged per week)
 weekly.met <- BB1 %>%  
   rename("TS.5" = "SOIL_TEMP_5CM", 
          "TS.10" = "SOIL_TEMP_10CM",
@@ -341,7 +371,7 @@ weekly.met <- BB1 %>%
     TS.50 = mean(TS.50, na.rm = T),
     RH = mean(RH_2M, na.rm = T),  # relative humidity
     PARin = mean(INCOMING_PAR, na.rm = T) * d.avg * 1e-6,  # mol m2 day -1 
-    SWin = mean(SHORTWAVE_IN, na.rm = T),
+    SWin = mean(SHORTWAVE_IN, na.rm = T),  # W m-2 (J m-2 s-1)
     VPD.y = mean(VPD.y, na.rm = T),
     Precip = sum(PRECIP, na.rm = T),
     PA_2M = mean(PA_2M, na.rm = T),  # barrometric pressure from met
@@ -354,3 +384,30 @@ weekly.met <- BB1 %>%
     ustar = mean(u., na.rm = T)
   ) %>%
   ungroup()
+
+
+###### calculate percentage of non-gapfilled data #######
+
+
+# length of gap-filled data
+count_gf <- BB1 %>% 
+  set_period() %>% 
+  set_season(date = BB1$date) %>%
+  group_by(period, season) %>% 
+  tally() %>% 
+  ungroup()
+
+# length of non-gapfilled data
+count_ngf <- BB1 %>% 
+  drop_na(co2_flux) %>%
+  set_period() %>% 
+  set_season(date = BB1$date[which(!is.na(BB1$co2_flux))]) %>% 
+  group_by(period, season) %>% 
+  tally() %>% 
+  ungroup() %>% 
+  mutate(n_gf = count_gf$n, 
+         percent = n/count_gf$n * 100)
+
+write.csv(count_ngf, "df/count_ngf.csv")
+
+###### 

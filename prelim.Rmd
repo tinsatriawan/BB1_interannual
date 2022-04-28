@@ -16,6 +16,7 @@ source("data_wrangling.R")
 library(phenofit)
 library(rootSolve)
 library(modelbased)
+library(reshape2)
 
 
 
@@ -94,6 +95,7 @@ plot_monthly_anom <- function(main_data, anom_data){
 
 month.abb.level <- c("Oct","Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep")
 
+
 ```
 
 
@@ -159,7 +161,7 @@ for(i in 1:nrow(monthly)){
 
 **Non gap-filled** $CO_2$ & $CH_4$ fluxes. daily fluxes are calculated only from days with at least 60% half-hourly data available. 
 
-```{r, message = F, warning = F}
+```{r plotting non gapfilled daily fluxes, message = F, warning = F}
 co2_ngf <- plot_daily(data = daily.nGF, 
                    variable = co2gC, 
                    label = expression("CO"[2]*" flux (gC"*m^{-2}~day^{-1}*")"), 
@@ -177,7 +179,7 @@ ch4_ngf <- plot_daily(data = daily.nGF,
 
 ## Gap-filled daily $CO_2$ & $CH_4$ fluxes
 
-```{r, message = F, warning = F}
+```{r plotting gapfilled daily fluxes, message = F, warning = F}
 RecogC <- plot_daily(data = daily, 
                    variable = RecogC, 
                    label = bquote('Reco (g C' ~m^-2~ day^-1*')'), 
@@ -274,7 +276,14 @@ met_monthly <- BB_met %>%
       albedo = mean(albedo, na.rm = T), # unitless
       LST = mean(LST, na.rm = T),  # land surface temp 
       G = mean(G, na.rm = T),
-      G_corr = mean(G_corr, na.rm = T)
+      G_corr = mean(G_corr, na.rm = T), 
+      H = mean(H, na.rm = T),  # W m-2
+      LE = mean(LE, na.rm = T), # W m-2
+      LWin = mean(LWin, na.rm = T), # W m-2 
+      LWout = mean(LWout, na.rm = T) ,  # W m-2 
+      SWout = mean(SWout, na.rm = T),   # W m-2
+      Rn = mean(Rn, na.rm = T),  # W m-2
+      PAR_SWin = mean(PAR_SWin, na.rm = T)  #no unit
       ) %>%
   mutate(month_local = month(floor_date))
 
@@ -302,7 +311,14 @@ met_monthly_means <- met_monthly %>%
       albedo = mean(albedo, na.rm = T), # unitless
       LST = mean(LST, na.rm = T),  # land surface temp 
       G = mean(G, na.rm = T), 
-      G_corr = mean(G_corr, na.rm = T)
+      G_corr = mean(G_corr, na.rm = T), 
+      H = mean(H, na.rm = T),  # W m-2
+      LE = mean(LE, na.rm = T), # W m-2
+      LWin = mean(LWin, na.rm = T), # W m-2 
+      LWout = mean(LWout, na.rm = T) ,  # W m-2 
+      SWout = mean(SWout, na.rm = T),   # W m-2
+      Rn = mean(Rn, na.rm = T),  # W m-2
+      PAR_SWin = mean(PAR_SWin, na.rm = T)  #no unit
       )
 
 # calculate stdev (across all years) for monthly met variables
@@ -325,7 +341,14 @@ met_monthly_sd <- met_monthly %>%
       albedo = sd(albedo, na.rm = T), # unitless
       LST = sd(LST, na.rm = T),  # land surface temp 
       G = sd(G, na.rm = T), 
-      G_corr = sd(G_corr, na.rm = T)      
+      G_corr = sd(G_corr, na.rm = T), 
+      H = sd(H, na.rm = T),  # W m-2
+      LE = sd(LE, na.rm = T), # W m-2
+      LWin = sd(LWin, na.rm = T), # W m-2 
+      LWout = sd(LWout, na.rm = T) ,  # W m-2 
+      SWout = sd(SWout, na.rm = T),   # W m-2
+      Rn = sd(Rn, na.rm = T),  # W m-2
+      PAR_SWin = mean(PAR_SWin, na.rm = T)  #no unit
       )
 
 
@@ -345,6 +368,81 @@ for(i in 1:nrow(met_monthly_anom)){
   # print(i)
   }
 
+
+
+
+#### calculate anomalies from climate normals 
+
+climate_normals_anom <- data.frame(floor_date = NA, 
+                              month_local = NA,
+                              precip_anom = NA, 
+                              Ta_anom = NA) 
+
+for(i in 1:nrow(met_monthly)){
+  index <- which(climate_normals$month == met_monthly$month_local[i])
+  climate_normals_anom[i, "floor_date"] <- as.Date(met_monthly$floor_date[i])
+  climate_normals_anom[i, "month_local"] <- met_monthly$month_local[i]
+  climate_normals_anom[i, "precip_anom"] <- met_monthly$Precip[i] - climate_normals$precip_avg[index]
+  climate_normals_anom[i, "Ta_anom"] <- met_monthly$Ta[i] - climate_normals$T_avg[index]
+}
+
+climate_normals_anom <- climate_normals_anom %>% 
+  mutate(date = as.Date(floor_date)) %>% 
+  set_period() %>% 
+  set_season(date = climate_normals_anom$date)
+
+```
+
+```{r plot anomalies from climate normals, fig.height = 8, fig.width = 8}
+
+climate_normals_anom %>% 
+  ggplot() + 
+  geom_point(aes(x = Ta_anom, y = precip_anom, 
+                 colour = factor(period), 
+                 shape = factor(month_local)), 
+             size = 4) + 
+  scale_shape_manual(values=1:nlevels(factor(climate_normals_anom$month_local))) +
+  geom_abline(intercept = 0, slope = 0) + 
+  geom_vline(xintercept = 0) + 
+  scale_x_continuous(limits = c(-5, 5),  name = bquote(T[a]~'anomalies('*degree*'C)')) +
+  scale_y_continuous(limits = c(-130, 130), name = "P anomalies (mm) ") +
+  theme_bw () + 
+  theme(text = element_text(size = 12)) + 
+  labs(col = "period", shape = "month")
+
+
+climate_normals_anom %>% 
+  ggplot() + 
+  geom_point(aes(x = Ta_anom, y = precip_anom, 
+                 colour = factor(period), 
+                 shape = factor(season)), 
+             size = 4) + 
+  scale_shape_manual(values=c(15,16)) +
+  geom_abline(intercept = 0, slope = 0) + 
+  geom_vline(xintercept = 0) + 
+  scale_x_continuous(limits = c(-5, 5),  name = bquote(T[a]~'anomalies('*degree*'C)')) +
+  scale_y_continuous(limits = c(-130, 130), name = "P anomalies (mm) ") +
+  theme_bw () + 
+  theme(text = element_text(size = 12)) + 
+  labs(col = "period", shape = "season")
+
+
+
+met_monthly_anom %>% 
+  mutate(date = floor_date) %>% 
+  set_period() %>%
+  ggplot() + 
+  geom_point(aes(x = Ta, y = wtd *100, 
+                 colour = factor(period), 
+                 shape = factor(month_local)), 
+             size = 4) + 
+  scale_shape_manual(values=1:nlevels(factor(met_monthly_anom$month_local))) +
+  geom_abline(intercept = 0, slope = 0) + 
+  geom_vline(xintercept = 0) + 
+  scale_x_continuous(limits = c(-3.5, 3.5), name =bquote(T[a]~'anomalies('*degree*'C)')) +
+  scale_y_continuous(limits = c(-9, 9), name = "WTD anomalies (cm)") +
+  theme_bw() + 
+  labs(col = "period", shape = "month")
 
 ```
 
@@ -616,6 +714,7 @@ dev.off()
 ```
 
 
+
 ## Cumulative NEE, GPP, Reco 
 
 ```{r plot cumulative fluxes}
@@ -773,7 +872,7 @@ ggplot() +
 precip <- BB_met%>%
 ggplot() +
   geom_bar(data = met_monthly_anom, aes(x = floor_date, y = Precip/10), fill = "gray", stat = "identity") +
-  geom_bar(aes(x = date, y = rollmean(Precip, 7, fill = NA)), stat = "identity", fill = "black") +
+  geom_bar(aes(x = date, y = Precip), stat = "identity", fill = "black") +
   scale_y_continuous(
     # limits = c(0, 30),
     name = bquote("Precipitation (mm"~d^-1~")"),
@@ -801,12 +900,26 @@ ggplot() +
 
 ET <- BB_met%>%
 ggplot() +
-  geom_bar(data = met_monthly_anom, aes(x = floor_date, y = ET*2), fill = "gray", stat = "identity") +
-  geom_line(aes(x = date, y = rollmean(ET, 7, fill = NA))) +
+  geom_bar(data = met_monthly_anom, aes(x = floor_date, y = ET*0.2), fill = "gray", stat = "identity") +
+  geom_bar(aes(x = date, y = ET), fill = "black", stat = "identity") +
   scale_y_continuous(
     # limits = c(0, 30),
-    name = bquote("E (mm)"),
-    sec.axis = sec_axis(~./2, name = bquote(Delta*~"E (mm)"))
+    name = bquote("ET (mm)"~d^-1~")"),
+    sec.axis = sec_axis(~./0.2, name = bquote(Delta*~"ET (mm)"~month^-1~")"))
+    ) +
+  labs(x = "") +
+  scale_x_date(date_breaks = "1 year", 
+               date_labels = "%b %Y") +
+  theme_bw()
+
+SWin <- BB_met%>%
+ggplot() +
+  geom_bar(data = met_monthly_anom, aes(x = floor_date, y = SWin*4), fill = "gray", stat = "identity") +
+  geom_line(aes(x = date, y = rollmean(SWin, 7, fill = NA))) +
+  scale_y_continuous(
+    # limits = c(0, 30),
+    name = bquote(SW["in"]~'(W'~m^{-2}~')'),
+    sec.axis = sec_axis(~./4, name = bquote(Delta*~SW["in"]~'(W'~m^{-2}~')'))
     ) +
   labs(x = "") +
   scale_x_date(date_breaks = "1 year", 
@@ -824,8 +937,72 @@ ggplot() +
   #   sec.axis = sec_axis(~./100, name = bquote(Delta*~"Pa (kPa)"))
   #   ) +
   # labs(x = "") +
-  # scale_x_date(date_breaks = "1 year", 
-  #              date_labels = "%b %Y") +
+  scale_x_date(date_breaks = "1 year",
+               date_labels = "%b %Y") +
+  theme_bw()
+
+energy_fluxes <- BB_met%>%
+ggplot() +
+  # geom_bar(data = met_monthly_anom, aes(x = floor_date, y = PA_2M*100), fill = "gray", stat = "identity") +
+  geom_line(aes(x = date, y = rollmean(Rn, 7, fill = NA), col = "Rn"), size = 0.8) +
+  geom_line(aes(x = date, y = rollmean(LE, 7, fill = NA), col = "LE"), size = 0.8) +
+  geom_line(aes(x = date, y = rollmean(H, 7, fill = NA), col = "H"), size = 0.8) +
+  geom_line(aes(x = date, y = rollmean(G_corr, 7, fill = NA), col = "G"), size = 0.8) +
+  scale_color_manual(values = c("Rn" = "magenta", 
+                                "LE" = "#00798c", 
+                                "H" = "#d1495b", 
+                                "G" = "orange")) +
+  labs(y = bquote('Energy fluxes (W'~m^{-2}~')'), 
+       col = "") +
+  scale_x_date(date_breaks = "1 year",
+               date_minor_breaks = "1 month",
+               date_labels = "%b %Y") +
+  theme_bw()
+
+
+radiation <- BB_met%>%
+ggplot() +
+  # geom_bar(data = met_monthly_anom, aes(x = floor_date, y = PA_2M*100), fill = "gray", stat = "identity") +
+  geom_line(aes(x = date, y = rollmean(LWin, 7, fill = NA), col = "LWin"), size = 0.8) +
+  geom_line(aes(x = date, y = rollmean(LWout, 7, fill = NA), col = "LWout"), size = 0.8) +
+  geom_line(aes(x = date, y = rollmean(SWin, 7, fill = NA), col = "SWin"), size = 0.8) +
+  geom_line(aes(x = date, y = rollmean(SWout, 7, fill = NA), col = "SWout"), size = 0.8) +
+  scale_color_manual(values = c("LWin" = "magenta", 
+                                "LWout" = "#00798c", 
+                                "SWin" = "#d1495b", 
+                                "SWout" = "orange")) +
+  labs(y = bquote('Radiation (W'~m^{-2}~')'), 
+       col = "") +
+  scale_x_date(date_breaks = "1 year",
+               date_minor_breaks = "1 month",
+               date_labels = "%b %Y") +
+  theme_bw()
+
+albedo <- BB_met%>%
+ggplot() +
+  geom_bar(data = met_monthly_anom, aes(x = floor_date, y = albedo*4), fill = "gray", stat = "identity") +
+  geom_line(aes(x = date, y = albedo)) +
+  scale_y_continuous(
+    breaks = c(-0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6, 0.8), 
+    name = bquote('Albedo'),
+    sec.axis = sec_axis(~./4, name = bquote(Delta*~'Albedo'))
+    ) +
+  labs(x = "") +
+  scale_x_date(date_breaks = "1 year", 
+               date_labels = "%b %Y") +
+  theme_bw()
+
+PAR_SWin <- BB_met%>%
+ggplot() +
+  geom_bar(data = met_monthly_anom, aes(x = floor_date, y = PAR_SWin*4), fill = "gray", stat = "identity") +
+  geom_line(aes(x = date, y = PAR_SWin)) +
+  scale_y_continuous(
+    name = bquote('PAR/'~SW['in']),
+    sec.axis = sec_axis(~./4, name = bquote(Delta*~'PAR/'~SW['in']))
+    ) +
+  labs(x = "") +
+  scale_x_date(date_breaks = "4 months",
+               date_labels = "%b %Y") +
   theme_bw()
 
 
@@ -844,8 +1021,16 @@ print(precip)
 ggsave("plots/precip.png")
 print(ET)
 ggsave("plots/ET.png")
-
-
+print(SWin)
+ggsave("plots/SWin.png")
+print(energy_fluxes)
+ggsave("plots/energy_fluxes.png")
+print(albedo)
+ggsave("plots/albedo.png")
+print(PAR_SWin)
+ggsave("plots/PAR_SWin.png")
+print(radiation)
+ggsave("plots/radiation.png")
 # ggplotly(water)
 
 ```
@@ -962,7 +1147,6 @@ met_labels <- c(
 
 met_year <- BB_met %>%
   group_by(period) %>%
-  filter(period == "2015-2016") %>%
   mutate(Precip = cumsum(Precip), 
          ET = cumsum(ET)) %>%
   ungroup() %>%
@@ -986,9 +1170,11 @@ met_year <- BB_met %>%
                      TRUE ~ NA_character_)
          )
 
-x_break <- met_year$order[!is.na(met_year$day_label)] [1:72]  # 30 * 7  
+x_break <- met_year$order[!is.na(met_year$day_label)] [1:72]  # 6 (number of variable) * 12 (month)
 x_label <- met_year$day_label[!is.na(met_year$day_label)]
 x_label
+
+
 windows()
 met_year %>% 
   ggplot(aes(x = order, y = value, color = factor(period), group = factor(period))) + 
@@ -1121,6 +1307,8 @@ ggsave("plots/met2_yearly.png")
 ```
 
 
+
+
 # Annual 
 
 
@@ -1163,6 +1351,8 @@ met_an_means <- BB_met %>%
       max_wtd = max(wtd, na.rm = T), 
       day_wtd = count(wtd > 0, na.rm = T), 
       day_wtd2 = count(wtd < -0.1, na.rm = T),
+      wtmd = sum(wtd < 0, na.rm = T), 
+      wtms = sum(wtd > 0, na.rm = T),
       day_precip = count(Precip > 0, na.rm = T), 
       TS.5 = mean(TS.5, na.rm = T),  # soil temp
       TS.10 = mean(TS.10, na.rm = T),
@@ -1181,7 +1371,7 @@ met_an_means <- BB_met %>%
       albedo = mean(albedo, na.rm = T), # unitless
       LST = mean(LST, na.rm = T),  # land surface temp 
       G = mean(G, na.rm = T), 
-      G_corr = mean(G_corr, na.rm = T)      
+      G_corr = mean(G_corr, na.rm = T) 
     ) %>%
   ungroup()%>% 
   drop_na()
@@ -1195,7 +1385,9 @@ met_season_sum <- BB_met %>%
       min_wtd = min(wtd, na.rm = T), 
       max_wtd = max(wtd, na.rm = T),
       day_wtd = count(wtd > 0, na.rm = T), 
-      day_wtd2 = count(wtd < -0.1, na.rm = T),
+      day_wtd2 = count(wtd < -0.1, na.rm = T),      
+      wtmd = sum(wtd < 0, na.rm = T), 
+      wtms = sum(wtd > 0, na.rm = T),
       day_precip = count(Precip > 0, na.rm = T), 
       TS.5 = mean(TS.5, na.rm = T),  # soil temp
       TS.10 = mean(TS.10, na.rm = T),
@@ -1297,6 +1489,7 @@ f_GPP_NGS; f_Reco_NGS
 ```{r phenology}
 date.origin <- as.Date("2000-01-01")
 
+
 # GPP.use <- weekly.GF[!is.na(weekly.nGF$co2gC), ]
 # INPUT_GPP <- check_input(t = as.Date(GPP.use$floor_date), 
 #                          y = GPP.use$GPP_f_RF)
@@ -1306,16 +1499,15 @@ INPUT_GPP <- check_input(t = as.Date(weekly.nGF$floor_date),
                      # y = weekly.nGF$co2gC + weekly.GF$Reco)
                      
 
-
+NEE_use <- weekly.GF
+NEE_use[is.na(weekly.nGF$co2gC), -1] <- NA
 INPUT_NEE <- check_input(t = as.Date(weekly.nGF$floor_date),
-                     y = -(weekly.nGF$co2gC) + 8)
-                     # y = -(weekly.GF$NEE_f_RF) + 8)
+                     # y = -(weekly.nGF$co2gC) + 1)
+                     y = -(NEE_use$NEE_f_RF) + 1)
+                     # y = -(weekly.GF$NEE_f_RF) + 1)
 
 INPUT_Reco <- check_input(t = as.Date(weekly.GF$floor_date),
                      y = (weekly.GF$Reco))
-
-
-
 
 
 calc_phenology <- function(INPUT, ...){
@@ -1337,7 +1529,7 @@ calc_phenology <- function(INPUT, ...){
                     iters = iters, wmin = 0,
                     IsOptim_lambda = F,
                     lambda = lambda,
-                    nf = 3, frame = frame,
+                    nf = 3,
                     maxExtendMonth = 12,
                     r_max = r_max, r_min = r_min,
                     r_minPeakHeight = r_minPeakHeight,
@@ -1345,7 +1537,7 @@ calc_phenology <- function(INPUT, ...){
                     IsPlot = FALSE, IsPlot.OnlyBad = FALSE,
                     minpeakdistance = 1/3 * nptperyear, 
                     MaxPeaksPerYear = 1,
-                    MaxTroughsPerYear = 4,
+                    MaxTroughsPerYear = 1,
                     ypeak_min = 0.08)
   # curve fitting
   fit <- curvefits(INPUT, brks2, 
@@ -1363,6 +1555,7 @@ calc_phenology <- function(INPUT, ...){
   TRS <- c(0, 0.1, 0.2)  # set threshold
   # extract transition dates
   l_pheno <- get_pheno(fit, wFUN = wBisquare, TRS = TRS, IsPlot = F) 
+  # browser()
   pheno <- l_pheno$doy %>% melt_list("meth")
   # list output
   output <- list(brks2 = brks2, 
@@ -1432,7 +1625,7 @@ for(i in 1: length(pheno_NEE$fit)){
   for(j in 1: length(pheno_NEE$fit[[i]]$model)){
     NEE_model <- pheno_NEE$fit[[i]]$model[[j]]
     NEE_fit <- data.frame(flag = names(pheno_NEE$fit)[[i]],
-                          y = NEE_model$zs$iter2 - 8,
+                          y = NEE_model$zs$iter2 - 1,
                           t = as.Date(NEE_model$tout, origin = date.origin)
                           )
     NEE_fit <- data.frame(meth = as.factor(names(pheno_NEE$fit[[i]]$model)[[j]]), 
@@ -1464,7 +1657,7 @@ for(i in 1: length(pheno_NEE$fit)){
     NEE_fit <- NA
     NEE_fit <- data.frame(flag = names(pheno_NEE$fit)[[i]],
                           meth = names(pheno_NEE$fit[[i]]$model)[[j]],
-                          y = NEE_model$zs$iter2 - 8,
+                          y = NEE_model$zs$iter2 - 1,
                           t = as.Date(NEE_model$tout, origin = date.origin)
                           )
       if(j == 1) {
@@ -1483,7 +1676,7 @@ for(i in 1: length(pheno_NEE$fit)){
 ####----------------- phenology extracted from Reco ---------------------####
 
 # extract phenology dates
-pheno_Reco <- calc_phenology(INPUT_Reco, use.rough = T)
+pheno_Reco <- calc_phenology(INPUT_Reco, use.rough = F)
 
 # plot seasons
 plot_season(INPUT_Reco, pheno_Reco$brks2)
@@ -1520,7 +1713,9 @@ pheno_index <- data.frame(period = pheno_GPP$pheno$flag,
                           CUP_end_TRS = pheno_NEE$pheno$TRS1.eos,
                           Reco_start = pheno_Reco$pheno$TRS1.sos, 
                           Reco_end = pheno_Reco$pheno$TRS1.eos,
-                          NEE_peak = pheno_NEE$pheno$DER.pos) %>%
+                          NEE_peak = pheno_NEE$pheno$DER.pos, 
+                          GPP_peak = pheno_GPP$pheno$DER.pos, 
+                          Reco_peak = pheno_Reco$pheno$DER.pos) %>%
   mutate(CUP = CUP_end - CUP_start, 
          CUP_DER = CUP_end_DER - CUP_start_DER, 
          CUP_TRS = CUP_end_TRS - CUP_start_TRS, 
@@ -1534,7 +1729,7 @@ pheno_index <- data.frame(period = pheno_GPP$pheno$flag,
          RGR = (Reco_end - Reco_start)/(GPP_end_TRS - GPP_start_TRS)
          ) %>% 
   filter(method == "AG") %>%
-  mutate(period = c("2015-2016", "2016-2017", "2017-2018", "2018-2019", "2019-2020", "2020-2021"))
+  mutate(period = c("2016-2017", "2017-2018", "2018-2019", "2019-2020", "2020-2021"))  # remove 2015
 
 
 NEE_fit_forplot <- NEE_fit_forplot %>% filter(meth == "AG")
@@ -1544,7 +1739,8 @@ plot_ly(data = weekly.nGF, x = ~floor_date, y = ~-co2gC, type = "scatter", mode 
   add_trace(data = weekly.nGF, x = ~floor_date, y = ~GPP_f_RF, type = "scatter", mode = "markers", name = "GPP") %>% 
   add_trace(data = weekly.nGF, x = ~floor_date, y = ~Reco, type = "scatter", mode = "markers", name = "Reco") %>% 
   add_trace(data = NEE_fit_forplot, x = ~t, y = ~y, type = "scatter", mode = "lines", name = "NEE_fit") %>% 
-  add_trace(data = GPP_fit_forplot, x = ~t, y = ~y, type = "scatter", mode = "lines", name = "GPP_fit")
+  add_trace(data = GPP_fit_forplot, x = ~t, y = ~y, type = "scatter", mode = "lines", name = "GPP_fit") %>% 
+  add_trace(data = weekly.GF, x = ~floor_date, y = ~-NEE_f_RF, type = "scatter", mode = "markers", name = "NEE.gf" )
 
   
 
@@ -1552,7 +1748,11 @@ write.csv(pheno_index, "df/pheno_index.csv")
 
 
 
+
+
+
 ```
+
 
 
 ## Correlation
@@ -1604,12 +1804,12 @@ corr_GS_pheno <- left_join(pheno_index, filter(flux_season_sum, season == "growi
 
 
 flux_loop <- c("NEEgC_f_RF", "RecogC", "GPPgC_f_RF", "CH4_gC_RF")
-met_loop <- c("TS.5", "Ta", "VPD", "wtd", "PARin", "Precip", "GPPgC_f_RF", "min_TS.5", "max_TS.5", "min_Ta", "max_Ta", "min_wtd", "max_wtd", "PA", "RH", "day_wtd", "day_wtd2", "day_precip")
+met_loop <- c("TS.5", "Ta", "VPD", "wtd", "PARin", "Precip", "GPPgC_f_RF", "min_TS.5", "max_TS.5", "min_Ta", "max_Ta", "min_wtd", "max_wtd", "PA", "RH", "day_wtd", "day_wtd2", "day_precip", "wtmd", "wtms", "ET")
 phen_loop <- c("CUP_start",
                "CUP", 
                # "CUP_DER", "CUP_TRS", "CUP_G",
                "GSP_DER", "GSP_TRS", "GSP_G", "senescence_maturity",
-               "RGR", "summer_lag", "autumn_lag", "NEE_peak")
+               "RGR", "summer_lag", "autumn_lag", "NEE_peak", "GPP_peak", "Reco_peak")
 
 
 ###### for annual correlation ########

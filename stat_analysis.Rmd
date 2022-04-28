@@ -19,6 +19,7 @@ library(car)
 library(MASS)
 library(leaps)
 library(flextable)
+library(nlme)
 
 # set chunks defaults
 knitr::opts_chunk$set(
@@ -131,6 +132,372 @@ calc_yearly_MLR <- function(input, n_period, scope, type, ...) {
 
 
 
+# relationships 
+
+```{r relationships}
+
+
+########---------------- ET ---------------------#########
+
+#### GPP vs ET ####
+
+## select variables from the daily non gapfilled measurements 
+daily_nGF <- left_join(daily.nGF, BB_met) %>%
+  left_join(daily) %>%
+  set_period() %>%
+  drop_na() %>%
+  # mutate(LE = log(LE + 1 - min(LE))^4) 
+  mutate(ET = log(ET + 1 - min(ET)))
+
+daily_nGF %>% 
+  ggplot(aes(x = (ET), y = GPPgC_f_RF, color = period)) + 
+  geom_point() + 
+  geom_smooth(method = "loess", se = F)
+  
+
+# single model 
+model_GPP_ET <- lm(GPPgC_f_RF ~ ET, daily_nGF)
+sum_GPP_ET <- summary(model_GPP_ET)
+sum_GPP_ET
+
+plot_diagnostics(daily_nGF, model_GPP_ET, type = "GPPgC_f_RF")
+shapiro.test(residuals(model_GPP_ET))
+ncvTest(model_GPP_ET)
+
+# parallel model 
+model_GPP_ET_par <- lm(GPPgC_f_RF ~ ET + period, daily_nGF)
+sum_GPP_ET_par <- summary(model_GPP_ET_par)
+sum_GPP_ET_par
+
+plot_diagnostics(daily_nGF, model_GPP_ET_par, type = "GPPgC_f_RF")
+shapiro.test(residuals(model_GPP_ET_par))
+ncvTest(model_GPP_ET_par)
+
+anova(model_GPP_ET, model_GPP_ET_par)
+
+# separate model 
+model_GPP_ET_sep <- lm(GPPgC_f_RF ~ ET * period, daily_nGF)
+sum_GPP_ET_sep <- summary(model_GPP_ET_sep)
+sum_GPP_ET_sep
+
+plot_diagnostics(daily_nGF, model_GPP_ET_sep, type = "GPPgC_f_RF")
+shapiro.test(residuals(model_GPP_ET_sep))
+ncvTest(model_GPP_ET_sep)
+
+anova(model_GPP_ET_par, model_GPP_ET_sep)  # is the interaction term significant? 
+
+
+
+#### Reco vs ET ####
+
+# ## select variables from the daily measurements averaged over 1 week
+# daily_nGF <- left_join(daily.nGF, BB_met) %>%
+#   left_join(daily) %>%
+#   set_period() %>%
+#   drop_na() %>%
+#   # mutate(ET = log(ET + 1 - min(ET))^4) 
+#   mutate(ET = log(ET + 1 - min(ET))^1.5,
+#          RecogC = (RecogC + 1 - min(RecogC)))
+# 
+# daily_nGF %>% 
+#   ggplot(aes(x = (ET), y = RecogC, color = period)) + 
+#   geom_point() +
+#   geom_smooth(method = "loess", se = F)
+#   
+# 
+# # single model 
+# model_Reco_ET <- lm(RecogC ~ ET, daily_nGF)
+# sum_Reco_ET <- summary(model_Reco_ET)
+# sum_Reco_ET
+# 
+# plot_diagnostics(daily_nGF, model_Reco_ET, type = "RecogC")
+# shapiro.test(residuals(model_Reco_ET))
+# ncvTest(model_Reco_ET)
+# 
+# # parallel model 
+# model_Reco_ET_par <- lm(RecogC ~ ET + period, daily_nGF)
+# sum_Reco_ET_par <- summary(model_Reco_ET_par)
+# sum_Reco_ET_par
+# 
+# plot_diagnostics(daily_nGF, model_Reco_ET_par, type = "RecogC")
+# shapiro.test(residuals(model_Reco_ET_par))
+# ncvTest(model_Reco_ET_par)
+# 
+# anova(model_Reco_ET, model_Reco_ET_par)
+# 
+# # separate model 
+# model_Reco_ET_sep <- lm(RecogC ~ ET * period, daily_nGF)
+# sum_Reco_ET_sep <- summary(model_Reco_ET_sep)
+# sum_Reco_ET_sep
+# 
+# plot_diagnostics(daily_nGF, model_Reco_ET_sep, type = "RecogC")
+# shapiro.test(residuals(model_Reco_ET_sep))
+# ncvTest(model_Reco_ET_sep)
+# 
+# anova(model_Reco_ET_par, sum_Reco_ET_sep)  # is the interaction term significant? 
+# 
+# 
+
+
+
+
+
+
+
+
+
+#######---------------- Stomatal conductance ---------------#########
+
+# slope of relationship between saturation vapor pressure & temp 
+s <- 4098 * ( 0.6108 * exp((17.27 * BB1$AIR_TEMP_2M)/( + 273.3))) / (BB1$AIR_TEMP_2M + 273.2)^2 
+psy <- psychrometric.constant(BB1$AIR_TEMP_2M, BB1$PA_2M)
+Ga <- (BB1$wind_speed / BB1$u.^2) + (2 / 0.4 /BB1$u.)  
+Cp <- 1003.5  #specific heat capacity of water in J kg-1 K-1
+Cv <- 4.19e6
+Eps <- s / psy
+
+Gs_Ryu <-( 1/Ga * (((s / psy * (BB1$NR + BB1$G_corr)) + (BB1$air_density * bigleaf.constants()$cp * Ga * BB1$VPD.y / psy)) / BB1$LE - (s / psy) ) - 1) ^(-1)
+
+BB1 <- BB1 %>% 
+  mutate(Gs = Gs_Ryu)
+
+plot_ly(data = BB1, x = ~DATE, y = ~Gs, type = "scatter", mode = "markers") %>% toWebGL()
+
+## filter the outlier
+x <-quantile(BB1$Gs,c(0.01,0.99), na.rm = T)
+BB1$Gs <- ifelse(BB1$Gs >= x[1] & BB1$Gs <= x[2], BB1$Gs, NA)
+
+plot_ly(data = BB1, x = ~DATE, y = ~Gs, type = "scatter", mode = "markers") %>% toWebGL()
+
+## filter negative values
+BB1$Gs <- ifelse(BB1$Gs > 0, BB1$Gs, NA)
+
+# filter outlier again
+x <-quantile(BB1$Gs,c(0.01,0.99), na.rm = T)
+BB1$Gs <- ifelse(BB1$Gs <= x[2], BB1$Gs, NA)
+
+plot_ly(data = BB1, x = ~DATE, y = ~Gs, type = "scatter", mode = "markers") %>% toWebGL()
+
+
+## calculate daily, monthly, yearly Gs
+
+daily.Gs <- BB1 %>% 
+  group_by(Year_local, jday) %>% 
+  summarize(Gs = mean(Gs, na.rm = T)) %>%
+  ungroup() %>% 
+  mutate(date = as.POSIXct(paste(Year_local, jday, sep = "-"), format = "%Y-%j"), 
+         floor_date = floor_date(date, "month")) %>%
+  set_period() %>% 
+  filter(!is.na(date))
+
+monthly.Gs <- daily.Gs %>% 
+  group_by(period, floor_date) %>% 
+  summarize(Gs = mean(Gs, na.rm = T)) %>%
+  ungroup()
+
+yearly.Gs <- daily.Gs %>% 
+  group_by(Year_local) %>% 
+  summarize(Gs = mean(Gs, na.rm = T)) %>% 
+  ungroup()
+
+plot_ly(data = daily.Gs, x = ~date, y = ~Gs, type = "scatter", mode = "markers") %>% toWebGL()
+
+# monthly Gs value per year
+
+monthly.Gs <- monthly.Gs %>% 
+  group_by(period) %>%
+  arrange(floor_date) %>%
+  mutate(order = row_number()) %>%
+  ungroup() %>%
+  mutate(day_label = case_when(day(floor_date) == 1L ~ format(floor_date, "%b"),
+                     TRUE ~ NA_character_))
+
+x_break <- monthly.Gs$order[!is.na(monthly.Gs$day_label)] [1:12]
+x_label <- monthly.Gs$day_label[!is.na(monthly.Gs$day_label)]
+x_label
+
+monthly.Gs %>%
+  ggplot(aes(x = order, y = Gs, col = factor(period))) + 
+  geom_line(size = 0.7) + 
+  geom_point() + 
+  scale_x_continuous(
+    breaks = unique(x_break),
+    labels = unique(x_label)) +
+  theme_bw() +
+  labs(x = "", 
+       y = "Gs (m/s)", 
+       col = "")
+
+
+
+
+######----------------- Light response curve ---------------########
+
+#### get curve for each year ####
+light_resp <- data.frame(period = NA, 
+                         alpha = NA, 
+                         alpha_se = NA, 
+                         GPPmax = NA, 
+                         GPPmax_se = NA,
+                         RMSE = NA)
+year_period <- period
+for(i in 1:length(period)){
+  GS_dat <- BB1 %>%  # use half-hourly values
+  dplyr::select(c(DATE, date, jday, month_local, Year_local, time, period, season,
+            Tau, ET, RH, u., jday, co2_flux, ch4_flux, NEE_f,
+            Reco, GPP_f, GPP_DT, Reco_DT, FCH4_f, FCH4_gf_RF,
+            NEE_f_RF, GPP_f_RF, INCOMING_PAR)) %>%
+  dplyr::rename(year_local = Year_local, 
+                PARin = INCOMING_PAR) %>% 
+  set_period() %>% set_season(date = BB1$date) %>%
+  drop_na() %>% 
+  filter(season == "growing season" & PARin >10 & period == year_period[i])
+
+  mod <- nls(GPP_f ~ a*PARin*b/(a*PARin+b), start=list(a = 0.01, b = 5), data = GS_dat)
+  
+  coef.mod <- coef(mod)
+  coef.mod
+  a.GPP <- as.numeric(coef.mod[1])
+  b.GPP <- as.numeric(coef.mod[2])
+  
+  print(ggplot(GS_dat, aes(PARin, GPP_f)) + geom_point() + 
+    stat_function(fun=function(x) (a.GPP*x)*b.GPP/(a.GPP*x+b.GPP), colour = "red") +
+        xlab(bquote('Incoming PAR (umol'  ~m^-2~day^-1*')'))+
+    theme_bw())
+  
+  light_resp[i, "period"] <- period[i]
+  light_resp[i, "alpha"] <- a.GPP
+  light_resp[i, "alpha_se"] <- summary(mod)[["parameters"]][1,2]
+  light_resp[i, "GPPmax"] <- b.GPP
+  light_resp[i, "GPPmax_se"] <- summary(mod)[["parameters"]][1,2]
+  light_resp[i, "RMSE"] <- summary(mod)[["sigma"]]
+}
+
+
+####  test whether coeff differ between years #####
+GS_dat <- BB1 %>%
+  dplyr::select(c(DATE, date, jday, month_local, Year_local, time, period, season,
+            Tau, ET, RH, u., jday, co2_flux, ch4_flux, NEE_f,
+            Reco, GPP_f, GPP_DT, Reco_DT, FCH4_f, FCH4_gf_RF,
+            NEE_f_RF, GPP_f_RF, INCOMING_PAR)) %>%
+  dplyr::rename(year_local = Year_local, 
+                PARin = INCOMING_PAR) %>% 
+  set_period() %>% set_season(date = BB1$date) %>%
+  drop_na() %>% 
+  filter(season == "growing season" & PARin > 18, GPP_f > 0)
+
+
+mod <- gnls(GPP_f ~ a*PARin*b/(a*PARin+b), 
+            start=list(a = 0.02, b = 5), data = GS_dat)
+
+mod.year <- gnls(GPP_f ~ (a*PARin*b)/(a*PARin+b), data = GS_dat, 
+            start = list(a =  rep(0.01, 5), 
+                         b = rep(7, 5)), 
+            params = list(a ~ period - 1, 
+                          b ~ period -1))
+
+anova(mod, mod.year)
+
+
+#### plotting all years ####
+# get color codes 
+cols <- gg_color_hue(5)  # 5 is number of factors (period)
+
+
+(GS.LR <- BB1 %>%
+  dplyr::select(c(DATE, date, jday, month_local, Year_local, time, period, season,
+            Tau, ET, RH, u., jday, co2_flux, ch4_flux, NEE_f,
+            Reco, GPP_f, GPP_DT, Reco_DT, FCH4_f, FCH4_gf_RF,
+            NEE_f_RF, GPP_f_RF, INCOMING_PAR)) %>%
+  dplyr::rename(year_local = Year_local, 
+                PARin = INCOMING_PAR) %>% 
+  set_period() %>% set_season(date = BB1$date) %>%
+  drop_na() %>% 
+  filter(season == "growing season" & PARin >10) %>%
+  ggplot(aes(PARin, GPP_f), group = period) + geom_point(aes(color = period))+
+  stat_function(fun=function(x) (light_resp[1, "alpha"]*x)*light_resp[1, "GPPmax"]/(light_resp[1, "alpha"]*x+light_resp[1, "GPPmax"]), color = cols[1], size = 1.2) +
+  stat_function(fun=function(x) (light_resp[2, "alpha"]*x)*light_resp[2, "GPPmax"]/(light_resp[2, "alpha"]*x+light_resp[2, "GPPmax"]), color = cols[2], size = 1.2) +
+  stat_function(fun=function(x) (light_resp[3, "alpha"]*x)*light_resp[3, "GPPmax"]/(light_resp[3, "alpha"]*x+light_resp[3, "GPPmax"]), color = cols[3], size = 1.2) +
+  stat_function(fun=function(x) (light_resp[4, "alpha"]*x)*light_resp[4, "GPPmax"]/(light_resp[4, "alpha"]*x+light_resp[4, "GPPmax"]), color = cols[4], size = 1.2) +
+  stat_function(fun=function(x) (light_resp[5, "alpha"]*x)*light_resp[5, "GPPmax"]/(light_resp[5, "alpha"]*x+light_resp[5, "GPPmax"]), color = cols[5], size = 1.2) +
+
+       # xlab(bquote('Incoming PAR ('*mu~'mol'~m^-2~s^-1*')'))+
+          #ylab(bquote('GPP ('*mu~'mol' ~m^-2~s^-1*')'))+
+   ylab(expression(paste("GPP (",mu,"mol"," ", m^-2," ", s^-1, ")")))+
+      xlab(expression(paste("Incoming PAR (",mu,"mol"," ", m^-2," ", s^-1, ")")))+
+   #ylab(expression(paste("Power [",mu, V^2,"]")))
+  theme(axis.text = element_text(size = 14),
+          axis.title.x = element_text(size = 15),
+         axis.title.y = element_text(size = 15))+
+  theme_bw())
+
+ggsave("plots/light_response.jpg", width = 7, height = 4, dpi=300)
+
+write.csv(light_resp, "df/light_response.csv")
+
+
+
+
+
+######----------------- PAR vs SWin -----------------------########
+
+
+daily_nGF <- left_join(daily.nGF, BB_met) %>%
+  left_join(daily) %>%
+  set_period() %>%
+  drop_na() %>% 
+  filter(PARin > 10 & season == "growing season") %>%
+  mutate(SWin = SWin* d.avg * 1e-6,  # J m-2 s-1 to get MJ m-2 d-1
+         PARin = PARin / 4.6,  # convert from mol m2 day -1  to MJ m-2 d-1
+         SI = PARin/SWin
+         )
+  
+daily_nGF %>%  
+  ggplot(aes(x = SWin, y = PARin, color = period)) + 
+  geom_point() + 
+  geom_smooth(method = "lm", se = F) + 
+  theme_bw()
+
+daily_nGF %>%  
+  ggplot(aes(x = date, y = SI, color = period)) + 
+  geom_point() + 
+  theme_bw()
+  
+# single model 
+model_PAR_SWin <- lm(PARin ~ SWin, daily_nGF)
+sum_PAR_SWin <- summary(model_PAR_SWin)
+sum_PAR_SWin
+
+plot_diagnostics(daily_nGF, model_PAR_SWin, type = "PARin")
+shapiro.test(residuals(model_PAR_SWin))
+ncvTest(model_PAR_SWin)
+
+# parallel model 
+model_PAR_SWin_par <- lm(PARin ~ SWin + period, daily_nGF)
+sum_PAR_SWin_par <- summary(model_PAR_SWin_par)
+sum_PAR_SWin_par
+
+plot_diagnostics(daily_nGF, model_PAR_SWin_par, type = "PARin")
+shapiro.test(residuals(model_PAR_SWin_par))
+ncvTest(model_PAR_SWin_par)
+
+anova(model_PAR_SWin, model_PAR_SWin_par)
+
+# separate model 
+model_PAR_SWin_sep <- lm(PARin ~ SWin * period, daily_nGF)
+sum_PAR_SWin_sep <- summary(model_PAR_SWin_sep)
+sum_PAR_SWin_sep
+
+plot_diagnostics(daily_nGF, model_PAR_SWin_sep, type = "PARin")
+shapiro.test(residuals(model_PAR_SWin_sep))
+ncvTest(model_PAR_SWin_sep)
+
+anova(model_PAR_SWin_par, model_PAR_SWin_sep)
+
+```
+
+
+
 
 # for CO2
 
@@ -170,7 +537,7 @@ model.step <- stepAIC(model.null,
                                    lower = ~1),
                       trace = T)
 
-# in order: LE, TS.5, wtd, Precip, Ta, ustar, RH
+# in order: PARin, TS.5, wtd, Precip, PA_2M
 
 
 ####-------------- variable selection------------------####
@@ -199,34 +566,26 @@ weekly_nGF1 <- weekly_nGF %>%
          TS.5 = (TS.5 + 1 - min(TS.5))^3,
          LE = log(LE + 1 - min(LE))^(2),
          PARin = log(PARin + 1 - min(PARin))^2, 
-         wtd = exp(wtd + 1 - min(wtd))) %>%
-  dplyr::select(-c(H, LE))
-
+         wtd = exp(wtd + 1 - min(wtd)), 
+         Precip = log(Precip + 1 - min(Precip)))
 
 # cor(weekly_nGF1%>% dplyr::select(-c(date, period)))
 
 ## check data
-pairs(weekly_nGF1 %>% dplyr::select(c(co2gC, TS.5, wtd, LE)),
+pairs(weekly_nGF1 %>% dplyr::select(c(co2gC, TS.5, wtd, PARin, Precip)),
       data = weekly_nGF1,
       main = "scatterplot matrix for mco2 ")
 
 
-####----- First combination of variables---- ####
-
-# exclude Ta, VPD.y, H, and PARin
-#	TS is strongly correlated to Ta, Ts has stronger correlation with co2 -> exclude Ta
-#	PARin and VPD.y are strongly correlated, PARin has stronger correlation with co2 -> exclude VPD.y
-#	LE and H are strongly correlated, LE has stronger correlation with Co2 -> exclude H
-#	LE and PARin and strongly correlated, LE has stronger correlation with co2 -> exclude PARin 
-
-# variables included are: LE, TS.5, wtd, Precip, Ta, ustar, RH, PA_2M
-# which is in agreement with stepAIC
-
 
 #####------------------- MODEL SELECTION FOR SINGLE LINE MODEL --------------------#####
+# no need to exclude variables w multicollinearity. StepAIC should exclude those automatically 
 
 # model selection
-co2gC_subset <- regsubsets(co2gC~., data = weekly_nGF1 %>% dplyr::select(-c(date, period)), nbest = 3)
+co2gC_subset <- regsubsets(co2gC~., 
+                           data = weekly_nGF1 %>% dplyr::select(-c(date, period)), 
+                           nbest = 5, nvmax = 3)
+
 s <- summary(co2gC_subset)
 
 result_stat <- data.frame(s$which, s$rsq, s$adjr2, s$bic)
@@ -240,44 +599,18 @@ result_stat[order(result_stat$s.bic), ]
 
 #### try the first model (highest adj R2) #### 
 
-model_1 <- lm(co2gC ~ TS.5 + RH + Precip + wtd + LE + ustar, data = weekly_nGF1) 
+model_1 <- lm(co2gC ~ TS.5 + Precip + wtd, data = weekly_nGF1) 
 sum_1 <- summary (model_1)
 sum_1 
 
 # check multicollinearity
 vif(model_1)
 
-# LE has vif > 5 which is concerning, might consider removing LE
-
 plot_diagnostics(weekly_nGF1, model_1)
 shapiro.test(residuals(model_1))
 
 
-
-#### try the other model (lowest BIC) #### 
-
-model_2 <- lm(co2gC ~ TS.5 + Precip + wtd + LE, data = weekly_nGF1) 
-sum_2 <- summary (model_2)
-sum_2 
-
-# check multicollinearity
-vif(model_2)
-
-plot_diagnostics(weekly_nGF1, model_2)
-shapiro.test(residuals(model_2))
-# residuals are normal, but homogeneity assumption is not quite met
-
-
-# let's see if we can cut off some variables
-
-# Start with null model
-model.step <- stepAIC(model.null, 
-                      scope = list(upper = ~TS.5 + Precip + wtd + LE, 
-                                   lower = ~1),
-                      trace = T)
-
-
-# let's exclude precip 
+##### try best model w/ 3 predictors ####
 
 model_2 <- lm(co2gC ~ TS.5 + wtd + PARin, data = weekly_nGF1) 
 sum_2 <- summary (model_2)
@@ -346,7 +679,8 @@ SSsc <- sum((unique(est_2_sep$yhat_mean_year) -
 
 
 #### SSt (SS total) ####
-SSt <- SSf + SSic + SSsc + SSe
+SSt <- SSf + SSic + SSsc + SSe  
+SSt_not_signifc <- SSic + SSsc + SSe  
 
 sum((est_2_sep$yhat - est_2_sep$yhat_mean)^2)
 
@@ -359,6 +693,9 @@ NEE_HOS <- data.frame(SSf = SSf/SSt * 100,
                       SSsc = SSsc/SSt * 100,
                       SSe = SSe/SSt * 100)
 
+NEE_HOS_not_signif <- data.frame(SSic = SSic/SSt_not_signifc * 100,
+                                 SSsc = SSsc/SSt_not_signifc * 100,
+                                 SSe = SSe/SSt_not_signifc * 100)
 
 ####-------------------- PLOTTING THE MODELS ------------------------------####
 
@@ -395,6 +732,8 @@ ggsave("plots/NEE_HOS_weekly_plot.jpg")
 ####-------------------- SAVE DF -----------------------#####
 
 write.csv(NEE_HOS, "df/NEE_HOS_weekly.csv")
+write.csv(NEE_HOS_not_signif, "df/NEE_HOS_weekly_not_signif.csv")
+
 
 NEE_HOS %>% flextable() 
 
@@ -405,7 +744,7 @@ NEE_HOS %>% flextable()
 
 ```{r NEE yearly MLR, include = F } 
 
-## select variables from the daily measurements averaged over 1 week
+## select variables from the daily measurements
 daily_nGF <- left_join(daily.nGF, BB_met) %>% 
   dplyr::select(c(date, co2gC, TS.5, RH, PARin,
                   VPD.y, Precip, PA_2M, Ta, wtd, LE, H, ustar)) %>%
@@ -497,7 +836,7 @@ model.full <- lm(ch4gC ~ ., data = weekly_nGF %>% dplyr::select(-c(date, period,
 
 # Start with null model
 model.step <- stepAIC(model.null, 
-                      scope = list(upper = ~GPP + TS.5 + RH + PARin + VPD.y + 
+                      scope = list(upper = ~GPP_f_RF + TS.5 + RH + PARin + VPD.y + 
                                      # LE + H + ustar +
                                      Precip + PA_2M + Ta + wtd, 
                                    lower = ~1),
@@ -529,11 +868,11 @@ cor(weekly_nGF %>% dplyr::select(-c(date, period)))
 weekly_nGF1 <- weekly_nGF %>%drop_na()%>%
   mutate(ch4gC = (log10(ch4gC + 1 - min(ch4gC)))^0.5,
          co2gC = (exp(co2gC + 1 - min(co2gC)))^2,
-         # GPP = (GPP_f_RF + 1 - min(GPP_f_RF))^3,
+         # GPP = (GPP_f_RF + 1 - min(GPP_f_RF))d^3,
          GPP = log10(GPP_f_RF + 1 - min(GPP_f_RF))^2, 
-         TS.5 = exp((TS.5 + 1 - min(TS.5)))^2,
-         Ta = (exp(Ta + 1 - min(Ta)))^2,
-         wtd = (exp(wtd + 1 - min(wtd)))^2,
+         TS.5 = (log(TS.5 + 1 - min(TS.5))^2),
+         Ta = (log(Ta + 1 - min(Ta))^2),
+         wtd = (exp(wtd + 1 - min(wtd))^2),
          LE = log10(LE + 1 - min(LE))^2,
          H = (H + 1 - min(H)), 
          PARin = log10(PARin + 1 - min(PARin))^2) %>% 
@@ -543,12 +882,12 @@ weekly_nGF1 <- weekly_nGF %>%drop_na()%>%
 cor(weekly_nGF1%>% dplyr::select(-c(date, period)))
 
 # check data
-pairs(weekly_nGF1 %>% dplyr::select(c(ch4gC, GPP, Ta, TS.5, wtd, LE, H)),
+pairs(weekly_nGF1 %>% dplyr::select(c(ch4gC, GPP, Ta, TS.5, wtd, LE, H, PARin)),
       data = weekly_nGF1,
       main = "scatterplot matrix for mco2 ")
 
 
-model_x <- lm(ch4gC ~ wtd + PARin + GPP + TS.5 , data = weekly_nGF1) 
+model_x <- lm(ch4gC ~ wtd + GPP + TS.5 , data = weekly_nGF1) 
 plot_diagnostics(weekly_nGF1, model_x, "ch4gC")
 shapiro.test(residuals(model_x))
 ncvTest(model_x)
@@ -572,26 +911,12 @@ model.step <- stepAIC(model.null,
                       trace = T)
 
 
-####----- First combination of variables---- ####
-
-# exclude TS.5, PARin, VPD, and H
-#	Ts and Ta are strongly correlated, TA has stronger correlation with ch4 -> exclude TS.5
-# LE is strongly correlated to PARin, VPD, and H -> exclude PARin, VPD, and H 
-# CO2gC is storngly correlated to LE, so may not be useful
-
-
-# variables included are: RH, Precip, PA_2M, Ta, wtd, LE, ustar
-
-# not in agreement with stepAIC result
-
-# weekly_nGF1 <- weekly_nGF1 %>% dplyr::select(-c(TS.5, PARin, VPD.y, H))
-
 
 
 #####------------------- MODEL SELECTION FOR SINGLE LINE MODEL --------------------#####
 
 # model selection
-ch4gC_subset <- regsubsets(ch4gC~., data = weekly_nGF1 %>% dplyr::select(-c(date, period, co2gC)), nbest = 3)
+ch4gC_subset <- regsubsets(ch4gC~., data = weekly_nGF1 %>% dplyr::select(-c(date, period, co2gC)), nbest = 5, nvmax = 3)
 s <- summary(ch4gC_subset)
 
 result_stat <- data.frame(s$which, s$rsq, s$adjr2, s$bic)
@@ -605,65 +930,18 @@ result_stat[order(result_stat$s.bic), ]
 
 #### try the first model (highest adj R2) #### 
 
-model_1 <- lm(ch4gC ~ TS.5 + RH + wtd + LE + H + GPP, data = weekly_nGF1) 
-sum_1 <- summary (model_1)
-sum_1 
-
-# check multicollinearity
-vif(model_1)
-
-# LE & H has vif > 5 which is concerning, might consider removing one of them
-
-plot_diagnostics(weekly_nGF1, model_1, "ch4gC")
-shapiro.test(residuals(model_1))
-ncvTest(model_1)
-
-
-
-#### try the other model (lowest BIC) #### 
-
-model_2 <- lm(ch4gC ~ TS.5 + RH + wtd + LE + GPP, data = weekly_nGF1) 
+model_2 <- lm(ch4gC ~ wtd + GPP, data = weekly_nGF1) 
 sum_2 <- summary (model_2)
 sum_2 
 
-# check multicollinearity
+plot_diagnostics(weekly_nGF1, model_2, "ch4gC")
+shapiro.test(residuals(model_2))
+ncvTest(model_2)
 vif(model_2)
-
-plot_diagnostics(weekly_nGF1, model_2, "ch4gC")
-shapiro.test(residuals(model_2))
-ncvTest(model_2)
-# residuals are normal, but homogeneity assumption is not quite met
-
-
-# let's see if we can cut off some variables
-
-# no x variable, the null model
-model.null <- lm(ch4gC ~ 1, data = weekly_nGF1 %>% dplyr::select(-c(date, period, co2gC))) 
-# all x variables
-model.full <- lm(ch4gC ~ ., data = weekly_nGF1 %>% dplyr::select(-c(date, period, co2gC))) 
-
-# Start with null model
-model.step <- stepAIC(model.null, 
-                      scope = list(upper = ~TS.5 + RH + wtd + LE + GPP, 
-                                   lower = ~1),
-                      trace = T)
-
-
-
-####------- new model (lowest BIC, modified) -------####
-
-model_2 <- lm(ch4gC ~ TS.5 + wtd + GPP, data = weekly_nGF1) 
-sum_2 <- summary (model_2)
-sum_2 
-
-plot_diagnostics(weekly_nGF1, model_2, "ch4gC")
-shapiro.test(residuals(model_2))
-ncvTest(model_2)
-
 
 ####---------------- SEPARATE LINES MODEL ---------------####
 
-model_2_sep <- lm(ch4gC ~ (GPP + wtd +  TS.5) * period, data = weekly_nGF1)
+model_2_sep <- lm(ch4gC ~ (wtd + GPP) * period, data = weekly_nGF1)
 sum_2_sep <- summary(model_2_sep)
 sum_2_sep
 
@@ -772,7 +1050,7 @@ fCH4_HOS %>% flextable()
 
 ```{r CH4 yearly MLR, eval = F, include = F} 
 
-## select variables from the daily measurements averaged over 1 week
+## select variables from the daily measurements
 daily_nGF <- left_join(daily.nGF, BB_met) %>%
   left_join(daily) %>%
   dplyr::select(c(date, ch4gC, co2gC, GPP_f_RF, TS.5, RH, PARin,
